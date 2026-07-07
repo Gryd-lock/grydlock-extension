@@ -89,11 +89,18 @@ src/popup/index.html → main.tsx → App.tsx (default mode)
                                         └─▶ src/popup/DevScoreSlider.tsx (dev-only override)
 ```
 
-**Real Freighter signing** — a dApp page calls `window.freighterApi.signTransaction(xdr)`:
+**Real Freighter signing** — `@stellar/freighter-api`'s `signTransaction` doesn't call a global
+function; it posts `{ source: 'FREIGHTER_EXTERNAL_MSG_REQUEST', type: 'SUBMIT_TRANSACTION', ... }`
+to `window`, and Freighter's own content script replies the same way. That `postMessage` traffic is
+the actual interception point:
 
 ```
-src/intercept/mainWorldEntry.ts    (MAIN world; wraps signTransaction, forwards the raw xdr)
-        │  window.postMessage
+dApp posts { source: FREIGHTER_EXTERNAL_MSG_REQUEST, type: SUBMIT_TRANSACTION, transactionXdr }
+        │
+        ▼
+src/intercept/mainWorldEntry.ts   (MAIN world; grabs the request via stopImmediatePropagation()
+        │                          before Freighter's own listener sees it)
+        │  window.postMessage (Gryd Lock's own internal request/response, separate from Freighter's)
         ▼
 src/intercept/bridgeEntry.ts      (isolated world; only place with chrome.* API access)
         │  chrome.runtime.sendMessage
@@ -101,7 +108,7 @@ src/intercept/bridgeEntry.ts      (isolated world; only place with chrome.* API 
 src/background/background.ts      (service worker)
         │
         ├─▶ src/decode/decodeTransaction.ts → extractDestination(xdr)
-        │      no single destination? → outcome 'allow', nothing shown, original call proceeds
+        │      no single destination? → outcome 'allow', nothing shown, request passes through
         │
         ├─▶ src/adapter/oracleAdapter.ts → getScore(destination)
         │
@@ -114,16 +121,22 @@ src/background/background.ts      (service worker)
         background resolves the pending request → bridge → mainWorld
                    │
                    ▼
-        'cancel'            → throws; the real signTransaction is never called
-        'proceed' / 'allow' → the real signTransaction(xdr, opts) is called
+        'cancel'            → mainWorld synthesizes a decline FREIGHTER_EXTERNAL_MSG_RESPONSE;
+                               Freighter's own listener never sees the request at all
+        'proceed' / 'allow' → mainWorld re-posts the original request (tagged so it isn't
+                               re-intercepted) for Freighter to handle exactly as it would have
 ```
 
-- **Why the split**: `mainWorldEntry.ts` runs in the page's own JS context (needed to reach
-  `window.freighterApi`) but has no `chrome.*` API access there; `bridgeEntry.ts` runs alongside it
-  in the isolated content-script world and is the only piece that can talk to the extension via
-  `chrome.runtime`. Decoding and scoring happen in the background worker rather than in
-  `mainWorldEntry.ts` so the Stellar SDK ships once per browser session instead of being injected
-  into every page (`mainWorld.js` is ~1.6&nbsp;KB; the SDK lives in `background.js` instead).
+- **Registration-order dependent**: this only works if `mainWorldEntry.ts`'s listener registers
+  before Freighter's own content script does. Both run at `document_start`, but Chrome does not
+  guarantee injection order across different extensions — the same tradeoff every
+  postMessage-based wallet-firewall extension accepts.
+- **Why the split**: `mainWorldEntry.ts` runs in the page's own JS context (needed to see the
+  page's `postMessage` traffic) but has no `chrome.*` API access there; `bridgeEntry.ts` runs
+  alongside it in the isolated content-script world and is the only piece that can talk to the
+  extension via `chrome.runtime`. Decoding and scoring happen in the background worker rather than
+  in `mainWorldEntry.ts` so the Stellar SDK ships once per browser session instead of being
+  injected into every page (`mainWorld.js` is ~2&nbsp;KB; the SDK lives in `background.js` instead).
 - **Pure logic**: `src/intercept/resolveOutcome.ts` is the testable core — given a decode function,
   a score function, and a decision function, it returns `'allow' | 'proceed' | 'cancel'` with no
   Chrome APIs involved, so it's covered by ordinary Vitest unit tests.
