@@ -1,7 +1,7 @@
 # Gryd Lock 🔒
 
 [![CI](https://github.com/Gryd-lock/grydlock-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/Gryd-lock/grydlock-extension/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-unspecified-lightgrey.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue)]()
 [![Built with TypeScript](https://img.shields.io/badge/Built%20with-TypeScript-3178c6?logo=typescript&logoColor=white)]()
 [![Status: Early Build](https://img.shields.io/badge/status-early%20build-orange)]()
@@ -12,7 +12,7 @@
 
 This is the product. It runs entirely in the user's browser. It hooks the wallet signing flow, decodes the pending transaction, requests a risk score for the destination, and renders a four-tier warning. It never blocks — it warns, and the user decides.
 
-> **Status:** Early build. The popup renders the oracle adapter's score across all four warning tiers (stub score). Real signing interception and a live score connection are **not yet built** — see the roadmap.
+> **Status:** Early build. The popup renders a live stub score across four tiers. Real signing interception and a live score connection are **not yet built** — see the roadmap.
 
 ## What it does
 
