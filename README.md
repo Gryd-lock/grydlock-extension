@@ -48,6 +48,10 @@ User proceeds or cancels — the extension never blocks
 
 Stellar has no universal injected wallet provider — each wallet exposes its own signing API, so interception is per-wallet, not global. Gryd Lock targets **Freighter** first (the most widely used browser wallet), proves the interception pattern, then generalises to xBull, Albedo, and Lobstr.
 
+## Accessibility
+
+The warning popup is fully accessible to screen reader users (e.g., VoiceOver, NVDA). It implements the `alertdialog` ARIA role and uses an `assertive` live region to ensure the risk tier is announced immediately upon opening. The popup wires the risk level, destination, and warning message together using `aria-describedby` so the complete context is conveyed coherently without relying on visual cues.
+
 ## Tech Stack
 
 - **TypeScript** — extension logic

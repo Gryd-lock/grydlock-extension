@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { axe, toHaveNoViolations } from 'jest-axe'
 import App from './App'
 import * as adapter from '../adapter/oracleAdapter'
+
+expect.extend(toHaveNoViolations)
 
 describe('App', () => {
   beforeEach(() => {
@@ -16,9 +19,13 @@ describe('App', () => {
 
   it('renders the matching tier once the adapter resolves', async () => {
     vi.spyOn(adapter, 'getScore').mockResolvedValue(85)
-    render(<App />)
+    const { container } = render(<App />)
     expect(await screen.findByText(/critical risk/i)).toBeInTheDocument()
     expect(screen.getByText('Score: 85')).toBeInTheDocument()
+    
+    // a11y check
+    const results = await axe(container)
+    expect(results).toHaveNoViolations()
   })
 
   it('shows a retry option when the adapter call fails', async () => {
@@ -59,17 +66,21 @@ describe('App in intercept mode', () => {
     window.history.pushState(null, '', '/')
   })
 
-  it('renders the tier from URL params without calling the adapter', () => {
+  it('renders the tier from URL params without calling the adapter', async () => {
     const getScoreSpy = vi.spyOn(adapter, 'getScore')
     window.history.pushState(
       null,
       '',
       '?mode=intercept&requestId=req-1&destination=GDEST&score=85',
     )
-    render(<App />)
+    const { container } = render(<App />)
     expect(screen.getByText(/critical risk/i)).toBeInTheDocument()
     expect(screen.getByText('GDEST')).toBeInTheDocument()
     expect(getScoreSpy).not.toHaveBeenCalled()
+    
+    // a11y check
+    const results = await axe(container)
+    expect(results).toHaveNoViolations()
   })
 
   it('sends the decision and closes on Proceed', () => {
