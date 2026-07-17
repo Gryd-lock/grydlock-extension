@@ -5,6 +5,10 @@ export interface DecodedDestination {
   asset?: string
 }
 
+export interface DecodedBatch {
+  destinations: DecodedDestination[]
+}
+
 const DESTINATION_OPERATION_TYPES = new Set([
   'payment',
   'pathPaymentStrictSend',
@@ -19,16 +23,18 @@ function assetLabel(op: Record<string, unknown>): string | undefined {
 }
 
 /**
- * Extracts the single destination account an unsigned transaction pays to.
- * Returns null (never throws) when the XDR is malformed or the transaction
- * has no destination-bearing operation or more than one distinct destination
- * (e.g. a batch of payments to different accounts) — callers should treat
- * null as "can't determine a single destination to score."
+ * Extracts every distinct destination account an unsigned transaction pays to.
+ *
+ * Returns null (never throws) when the XDR is malformed or there are no
+ * destination-bearing operations. Previously this returned null when there was
+ * more than one distinct destination, which made multi-destination batches
+ * indistinguishable from "can't parse" and caused resolveOutcome to silently
+ * 'allow' them. Callers are expected to handle a batch of destinations.
  */
 export function extractDestination(
   xdr: string,
   networkPassphrase: string = Networks.TESTNET,
-): DecodedDestination | null {
+): DecodedBatch | null {
   let parsed
   try {
     parsed = TransactionBuilder.fromXDR(xdr, networkPassphrase)
@@ -37,19 +43,28 @@ export function extractDestination(
   }
 
   const tx = parsed instanceof FeeBumpTransaction ? parsed.innerTransaction : parsed
-  const destinations = new Set<string>()
-  let asset: string | undefined
+  const seen = new Map<string, string>()
 
   for (const op of tx.operations) {
     if (DESTINATION_OPERATION_TYPES.has(op.type) && 'destination' in op && op.destination) {
-      destinations.add(op.destination as string)
-      asset = assetLabel(op as unknown as Record<string, unknown>)
+      const destination = op.destination as string
+      const asset = assetLabel(op as unknown as Record<string, unknown>)
+      if (!seen.has(destination)) {
+        seen.set(destination, asset ?? '')
+      } else if (asset && !seen.get(destination)) {
+        seen.set(destination, asset)
+      }
     }
   }
 
-  if (destinations.size !== 1) {
+  if (seen.size === 0) {
     return null
   }
 
-  return { destination: [...destinations][0], asset }
+  return {
+    destinations: [...seen.entries()].map(([destination, asset]) => ({
+      destination,
+      asset: asset || undefined,
+    })),
+  }
 }

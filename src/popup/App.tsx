@@ -10,6 +10,12 @@ const PLACEHOLDER_DESTINATION = 'GABCDEXAMPLE00000000000000000000000000000000000
 
 type LoadState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; score: number }
 
+interface DestinationRow {
+  destination: string
+  asset?: string
+  score: number
+}
+
 export default function App() {
   const params = new URLSearchParams(window.location.search)
   if (params.get('mode') === 'intercept') {
@@ -20,10 +26,22 @@ export default function App() {
 
 function InterceptView({ params }: { params: URLSearchParams }) {
   const requestId = params.get('requestId') ?? ''
-  const destination = params.get('destination') ?? ''
-  const asset = params.get('asset') ?? undefined
+  const destinationsJson = params.get('destinations')
   const score = Number(params.get('score') ?? '0')
   const tier = tierForScore(score)
+
+  let destinations: DestinationRow[] = []
+  if (destinationsJson) {
+    try {
+      destinations = JSON.parse(destinationsJson)
+    } catch {}
+  } else {
+    const destination = params.get('destination') ?? ''
+    const asset = params.get('asset') ?? undefined
+    if (destination) {
+      destinations = [{ destination, asset, score }]
+    }
+  }
 
   function respond(decision: 'proceed' | 'cancel') {
     const message: RuntimeDecisionMadeMessage = { type: 'DECISION_MADE', requestId, decision }
@@ -35,7 +53,7 @@ function InterceptView({ params }: { params: URLSearchParams }) {
     <TierWarning
       tier={tier}
       score={score}
-      destination={asset ? `${destination} (${asset})` : destination}
+      destinations={destinations}
       onCancel={() => respond('cancel')}
       onProceed={() => respond('proceed')}
     />
@@ -87,6 +105,7 @@ function ScoreView({ onRetry }: { onRetry: () => void }) {
     <TierWarning
       tier={tier}
       score={displayScore}
+      destinations={[{ destination: PLACEHOLDER_DESTINATION, score: displayScore }]}
       onCancel={() => window.close()}
       onProceed={() => window.close()}
       devControl={

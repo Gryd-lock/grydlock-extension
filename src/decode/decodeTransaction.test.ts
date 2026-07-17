@@ -19,17 +19,31 @@ function buildXdr(operations: ReturnType<typeof Operation.payment>[]) {
 }
 
 describe('extractDestination', () => {
-  it('extracts the destination from a single native payment', () => {
-    const xdr = buildXdr([Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '10' })])
-    expect(extractDestination(xdr, Networks.TESTNET)).toEqual({ destination: DEST_A, asset: undefined })
+  it('returns null for operations with no destination (e.g. manageData)', () => {
+    const xdr = buildXdr([Operation.manageData({ name: 'note', value: 'hi' })])
+    expect(extractDestination(xdr, Networks.TESTNET)).toBeNull()
   })
 
-  it('extracts destination and asset label from a non-native payment', () => {
-    const credit = new Asset('USD', ISSUER)
-    const xdr = buildXdr([Operation.payment({ destination: DEST_A, asset: credit, amount: '10' })])
+  it('returns null for malformed XDR instead of throwing', () => {
+    expect(extractDestination('not-valid-xdr', Networks.TESTNET)).toBeNull()
+  })
+
+  it('extracts a single destination from a single native payment', () => {
+    const xdr = buildXdr([
+      Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '10' }),
+    ])
     expect(extractDestination(xdr, Networks.TESTNET)).toEqual({
-      destination: DEST_A,
-      asset: `USD:${ISSUER}`,
+      destinations: [{ destination: DEST_A, asset: undefined }],
+    })
+  })
+
+  it('extracts one destination and its asset label from a non-native payment', () => {
+    const credit = new Asset('USD', ISSUER)
+    const xdr = buildXdr([
+      Operation.payment({ destination: DEST_A, asset: credit, amount: '10' }),
+    ])
+    expect(extractDestination(xdr, Networks.TESTNET)).toEqual({
+      destinations: [{ destination: DEST_A, asset: `USD:${ISSUER}` }],
     })
   })
 
@@ -44,31 +58,32 @@ describe('extractDestination', () => {
         path: [],
       }),
     ])
-    expect(extractDestination(xdr, Networks.TESTNET)).toEqual({ destination: DEST_A, asset: undefined })
+    expect(extractDestination(xdr, Networks.TESTNET)).toEqual({
+      destinations: [{ destination: DEST_A, asset: undefined }],
+    })
   })
 
-  it('returns null when operations target more than one destination', () => {
+  it('returns all distinct destinations when a transaction targets more than one', () => {
     const xdr = buildXdr([
       Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '10' }),
       Operation.payment({ destination: DEST_B, asset: Asset.native(), amount: '5' }),
     ])
-    expect(extractDestination(xdr, Networks.TESTNET)).toBeNull()
+    expect(extractDestination(xdr, Networks.TESTNET)).toEqual({
+      destinations: [
+        { destination: DEST_A, asset: undefined },
+        { destination: DEST_B, asset: undefined },
+      ],
+    })
   })
 
-  it('resolves a single destination when repeated across operations', () => {
+  it('deduplicates repeated destinations while preserving asset labels', () => {
+    const credit = new Asset('USD', ISSUER)
     const xdr = buildXdr([
       Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '10' }),
-      Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '5' }),
+      Operation.payment({ destination: DEST_A, asset: credit, amount: '5' }),
     ])
-    expect(extractDestination(xdr, Networks.TESTNET)).toEqual({ destination: DEST_A, asset: undefined })
-  })
-
-  it('returns null for operations with no destination (e.g. manageData)', () => {
-    const xdr = buildXdr([Operation.manageData({ name: 'note', value: 'hi' })])
-    expect(extractDestination(xdr, Networks.TESTNET)).toBeNull()
-  })
-
-  it('returns null for malformed XDR instead of throwing', () => {
-    expect(extractDestination('not-valid-xdr', Networks.TESTNET)).toBeNull()
+    expect(extractDestination(xdr, Networks.TESTNET)).toEqual({
+      destinations: [{ destination: DEST_A, asset: `USD:${ISSUER}` }],
+    })
   })
 })

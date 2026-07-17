@@ -14,24 +14,35 @@ const pendingDecisions = new Map<string, (decision: Decision) => void>()
 
 function requestDecision(
   requestId: string,
-  info: { destination: string; asset?: string; score: number },
+  info: { destinations: { destination: string; asset?: string }[]; scores: Array<{ destination: string; asset?: string; score: number }>; worstScore: number },
 ): Promise<Decision> {
   return new Promise((resolve) => {
     pendingDecisions.set(requestId, resolve)
 
     const params = new URLSearchParams({
-      mode: 'intercept',
       requestId,
-      destination: info.destination,
-      score: String(info.score),
+      score: String(info.worstScore),
     })
-    if (info.asset) params.set('asset', info.asset)
+
+    const mapped = info.scores.map((item) => ({
+      destination: item.destination,
+      asset: item.asset ?? '',
+      score: item.score,
+    }))
+    if (mapped.length > 1) {
+      mapped.sort((a, b) => b.score - a.score)
+      params.set('destinations', JSON.stringify(mapped))
+    } else if (mapped.length === 1) {
+      const first = mapped[0]
+      params.set('destination', first.destination)
+      if (first.asset) params.set('asset', first.asset)
+    }
 
     chrome.windows.create({
       url: chrome.runtime.getURL(`src/popup/index.html?${params.toString()}`),
       type: 'popup',
-      width: 320,
-      height: 420,
+      width: 400,
+      height: 520,
     })
   })
 }
