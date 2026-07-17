@@ -162,13 +162,23 @@ src/background/background.ts      (service worker)
 ## Quality Gates
 
 ```bash
-npm run lint       # ESLint
-npm run typecheck  # tsc --noEmit
-npm test           # Vitest
-npm run build      # tsc -b && vite build && node scripts/build-extension.mjs
+npm run lint           # ESLint
+npm run typecheck      # tsc --noEmit
+npm run test:coverage  # Vitest + v8 coverage (enforces thresholds)
+npm run build          # tsc -b && vite build && node scripts/build-extension.mjs
 ```
 
 All four run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull request.
+
+**Coverage policy.** Thresholds are configured in `vite.config.ts` and enforced by
+`npm run test:coverage` (CI runs this instead of bare `vitest run`). The following
+files are excluded from coverage because they require Chrome APIs or a real DOM
+that unit tests cannot provide:
+
+- `src/intercept/mainWorldEntry.ts` / `src/intercept/bridgeEntry.ts` — depend on `chrome.*` APIs and `postMessage` across extension worlds; covered by the e2e harness.
+- `src/background/background.ts` — service-worker `chrome.*` calls; covered by the e2e harness.
+- `src/popup/main.tsx` — React entry-point boilerplate.
+- `src/intercept/protocol.ts` — constant and type definitions only.
 
 ## Roadmap
 
