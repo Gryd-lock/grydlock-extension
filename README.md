@@ -140,10 +140,12 @@ src/background/background.ts      (service worker)
 - **Pure logic**: `src/intercept/resolveOutcome.ts` is the testable core — given a decode function,
   a score function, and a decision function, it returns `'allow' | 'proceed' | 'cancel'` with no
   Chrome APIs involved, so it's covered by ordinary Vitest unit tests.
-- **Graceful degradation**: transactions with no single determinable destination (malformed XDR, no
+- **Graceful degradation & timeouts**: transactions with no single determinable destination (malformed XDR, no
   destination-bearing operation, or multiple distinct destinations) resolve to `'allow'` — Gryd Lock
-  never blocks what it can't assess.
-- **Tests**: `src/decode/decodeTransaction.test.ts` provides property-based fuzz testing (via `fast-check`) and unit coverage to ensure `extractDestination` never throws under malformed, adversarial, or extreme XDR inputs. `src/intercept/resolveOutcome.test.ts` covers the decision logic directly; `src/adapter/oracleAdapter.test.ts` and `src/lib/tiers.test.ts` cover the adapter stub and tier mapping; `src/popup/App.test.tsx` covers both the popup's default (loading/error/retry/dev-slider) and intercept-mode rendering, against a mocked adapter and a stubbed `chrome.runtime`.
+  never blocks what it can't assess. Pending approval prompts in the background worker have a 60-second
+  configurable decision timeout — if unanswered, the request safely defaults to `'cancel'`, auto-closes
+  the popup window via `chrome.windows.remove`, and displays an "Expires in Xs" countdown in the UI.
+- **Tests**: `src/decode/decodeTransaction.test.ts` provides property-based fuzz testing (via `fast-check`) and unit coverage to ensure `extractDestination` never throws under malformed, adversarial, or extreme XDR inputs. `src/background/background.test.ts` covers prompt decision timeout handling and popup window removal with fake timers; `src/intercept/resolveOutcome.test.ts` covers the decision logic directly; `src/adapter/oracleAdapter.test.ts` and `src/lib/tiers.test.ts` cover the adapter stub and tier mapping; `src/popup/App.test.tsx` covers both the popup's default (loading/error/retry/dev-slider) and intercept-mode rendering (including countdown indicators), against a mocked adapter and a stubbed `chrome.runtime`.
 
 ## Develop
 

@@ -105,4 +105,15 @@ describe('App in intercept mode', () => {
     })
     expect(closeSpy).toHaveBeenCalled()
   })
+
+  it('renders countdown indicator when expiresAt URL param is provided', () => {
+    const expiresAt = Date.now() + 45000
+    window.history.pushState(
+      null,
+      '',
+      `?mode=intercept&requestId=req-1&destination=GDEST&score=10&expiresAt=${expiresAt}`,
+    )
+    render(<App />)
+    expect(screen.getByText(/expires in 45s/i)).toBeInTheDocument()
+  })
 })

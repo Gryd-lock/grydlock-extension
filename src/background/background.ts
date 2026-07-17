@@ -10,20 +10,49 @@ import type {
 
 type IncomingMessage = RuntimeSignRequestMessage | RuntimeDecisionMadeMessage
 
-const pendingDecisions = new Map<string, (decision: Decision) => void>()
+export const DEFAULT_TIMEOUT_MS = 60_000
 
-function requestDecision(
+export const pendingDecisions = new Map<string, (decision: Decision) => void>()
+
+export function requestDecision(
   requestId: string,
   info: { destination: string; asset?: string; score: number },
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<Decision> {
   return new Promise((resolve) => {
-    pendingDecisions.set(requestId, resolve)
+    let windowId: number | undefined
+    let timerId: ReturnType<typeof setTimeout> | undefined
+
+    const cleanup = () => {
+      if (timerId !== undefined) {
+        clearTimeout(timerId)
+        timerId = undefined
+      }
+      pendingDecisions.delete(requestId)
+    }
+
+    const resolveWith = (decision: Decision) => {
+      cleanup()
+      resolve(decision)
+    }
+
+    timerId = setTimeout(() => {
+      if (windowId !== undefined) {
+        chrome.windows.remove(windowId).catch(() => {})
+      }
+      resolveWith('cancel')
+    }, timeoutMs)
+
+    pendingDecisions.set(requestId, resolveWith)
+
+    const expiresAt = Date.now() + timeoutMs
 
     const params = new URLSearchParams({
       mode: 'intercept',
       requestId,
       destination: info.destination,
       score: String(info.score),
+      expiresAt: String(expiresAt),
     })
     if (info.asset) params.set('asset', info.asset)
 
@@ -32,33 +61,38 @@ function requestDecision(
       type: 'popup',
       width: 320,
       height: 420,
-    })
+    }).then((createdWindow) => {
+      if (createdWindow?.id !== undefined) {
+        windowId = createdWindow.id
+      }
+    }).catch(() => {})
   })
 }
 
-chrome.runtime.onMessage.addListener((message: IncomingMessage, _sender, sendResponse) => {
-  if (message.type === 'SIGN_REQUEST') {
-    resolveOutcome(message.xdr, {
-      extractDestination,
-      getScore,
-      requestDecision: (info) => requestDecision(message.requestId, info),
-    }).then((outcome) => {
-      const response: RuntimeSignOutcomeMessage = {
-        type: 'SIGN_OUTCOME',
-        requestId: message.requestId,
-        outcome,
-      }
-      sendResponse(response)
-    })
+if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message: IncomingMessage, _sender, sendResponse) => {
+    if (message.type === 'SIGN_REQUEST') {
+      resolveOutcome(message.xdr, {
+        extractDestination,
+        getScore,
+        requestDecision: (info) => requestDecision(message.requestId, info),
+      }).then((outcome) => {
+        const response: RuntimeSignOutcomeMessage = {
+          type: 'SIGN_OUTCOME',
+          requestId: message.requestId,
+          outcome,
+        }
+        sendResponse(response)
+      })
 
-    return true
-  }
+      return true
+    }
 
-  if (message.type === 'DECISION_MADE') {
-    const resolve = pendingDecisions.get(message.requestId)
-    resolve?.(message.decision)
-    pendingDecisions.delete(message.requestId)
-  }
+    if (message.type === 'DECISION_MADE') {
+      const resolve = pendingDecisions.get(message.requestId)
+      resolve?.(message.decision)
+    }
 
-  return undefined
-})
+    return undefined
+  })
+}

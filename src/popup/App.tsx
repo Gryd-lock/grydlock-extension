@@ -23,6 +23,8 @@ function InterceptView({ params }: { params: URLSearchParams }) {
   const destination = params.get('destination') ?? ''
   const asset = params.get('asset') ?? undefined
   const score = Number(params.get('score') ?? '0')
+  const expiresAtParam = params.get('expiresAt')
+  const expiresAt = expiresAtParam ? Number(expiresAtParam) : undefined
   const tier = tierForScore(score)
 
   function respond(decision: 'proceed' | 'cancel') {
@@ -36,6 +38,7 @@ function InterceptView({ params }: { params: URLSearchParams }) {
       tier={tier}
       score={score}
       destination={asset ? `${destination} (${asset})` : destination}
+      expiresAt={expiresAt}
       onCancel={() => respond('cancel')}
       onProceed={() => respond('proceed')}
     />

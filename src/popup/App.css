@@ -25,6 +25,12 @@ body {
   margin: 0 0 4px;
 }
 
+.expires-in {
+  font-size: 11px;
+  color: #666;
+  margin: 0 0 8px;
+}
+
 .message {
   font-size: 13px;
   color: #444;
