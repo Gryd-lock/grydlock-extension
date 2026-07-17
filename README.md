@@ -147,7 +147,8 @@ src/background/background.ts      (service worker)
   the decode/scoring/decision logic directly; `src/adapter/oracleAdapter.test.ts` and
   `src/lib/tiers.test.ts` cover the adapter stub and tier mapping; `src/popup/App.test.tsx` covers
   both the popup's default (loading/error/retry/dev-slider) and intercept-mode rendering, against a
-  mocked adapter and a stubbed `chrome.runtime`.
+  mocked adapter and a stubbed `chrome.runtime`, including the theme-aware tier accent variables
+  used by the popup.
 
 ## Develop
 
@@ -157,7 +158,9 @@ src/background/background.ts      (service worker)
 3. Go to `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, select the `dist/` output.
 4. Open the popup from the toolbar to exercise the dev/testing flow — the score comes from the
    adapter stub, and in dev builds the dev control lets you drag through all four tiers. To exercise
-   real interception, visit a page with Freighter installed and call `signTransaction`.
+   real interception, visit a page with Freighter installed and call `signTransaction`. The popup
+   follows the browser or OS `prefers-color-scheme` setting in both the default preview and
+   interception flows.
 
 ## Quality Gates
 
