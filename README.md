@@ -95,7 +95,7 @@ to `window`, and Freighter's own content script replies the same way. That `post
 the actual interception point:
 
 ```
-dApp posts { source: FREIGHTER_EXTERNAL_MSG_REQUEST, type: SUBMIT_TRANSACTION, transactionXdr }
+dApp posts { source: FREIGHTER_EXTERNAL_MSG_REQUEST, type: SUBMIT_TRANSACTION, transactionXdr, networkPassphrase }
         │
         ▼
 src/intercept/mainWorldEntry.ts   (MAIN world; grabs the request via stopImmediatePropagation()
@@ -107,7 +107,7 @@ src/intercept/bridgeEntry.ts      (isolated world; only place with chrome.* API 
         ▼
 src/background/background.ts      (service worker)
         │
-        ├─▶ src/decode/decodeTransaction.ts → extractDestination(xdr)
+        ├─▶ src/decode/decodeTransaction.ts → extractDestination(xdr, networkPassphrase)
         │      no single destination? → outcome 'allow', nothing shown, request passes through
         │
         ├─▶ src/adapter/oracleAdapter.ts → getScore(destination)

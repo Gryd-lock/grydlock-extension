@@ -38,11 +38,15 @@ function requestDecision(
 
 chrome.runtime.onMessage.addListener((message: IncomingMessage, _sender, sendResponse) => {
   if (message.type === 'SIGN_REQUEST') {
-    resolveOutcome(message.xdr, {
-      extractDestination,
-      getScore,
-      requestDecision: (info) => requestDecision(message.requestId, info),
-    }).then((outcome) => {
+    resolveOutcome(
+      message.xdr,
+      {
+        extractDestination,
+        getScore,
+        requestDecision: (info) => requestDecision(message.requestId, info),
+      },
+      message.networkPassphrase,
+    ).then((outcome) => {
       const response: RuntimeSignOutcomeMessage = {
         type: 'SIGN_OUTCOME',
         requestId: message.requestId,

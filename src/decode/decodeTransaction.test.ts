@@ -8,17 +8,39 @@ const DEST_A = Keypair.random().publicKey()
 const DEST_B = Keypair.random().publicKey()
 const ISSUER = Keypair.random().publicKey()
 
-function buildXdr(operations: ReturnType<typeof Operation.payment>[]) {
+function buildXdr(
+  operations: ReturnType<typeof Operation.payment>[],
+  networkPassphrase: string = Networks.TESTNET,
+) {
   const account = new Account(SOURCE, '0')
   const builder = new TransactionBuilder(account, {
     fee: '100',
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase,
   })
   for (const op of operations) builder.addOperation(op)
   return builder.setTimeout(30).build().toXDR()
 }
 
 describe('extractDestination', () => {
+  it('extracts destination for Networks.PUBLIC transactions by default and explicitly', () => {
+    const xdr = buildXdr(
+      [Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '10' })],
+      Networks.PUBLIC,
+    )
+    expect(extractDestination(xdr)).toEqual({ destination: DEST_A, asset: undefined })
+    expect(extractDestination(xdr, Networks.PUBLIC)).toEqual({ destination: DEST_A, asset: undefined })
+    expect(extractDestination(xdr, 'PUBLIC')).toEqual({ destination: DEST_A, asset: undefined })
+  })
+
+  it('extracts destination for Networks.TESTNET transactions when specified', () => {
+    const xdr = buildXdr(
+      [Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '10' })],
+      Networks.TESTNET,
+    )
+    expect(extractDestination(xdr, Networks.TESTNET)).toEqual({ destination: DEST_A, asset: undefined })
+    expect(extractDestination(xdr, 'TESTNET')).toEqual({ destination: DEST_A, asset: undefined })
+  })
+
   it('extracts the destination from a single native payment', () => {
     const xdr = buildXdr([Operation.payment({ destination: DEST_A, asset: Asset.native(), amount: '10' })])
     expect(extractDestination(xdr, Networks.TESTNET)).toEqual({ destination: DEST_A, asset: undefined })

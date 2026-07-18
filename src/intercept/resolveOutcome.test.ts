@@ -17,16 +17,22 @@ describe('resolveOutcome', () => {
     expect(requestDecision).not.toHaveBeenCalled()
   })
 
-  it('scores the destination and returns the requested decision', async () => {
+  it('scores the destination and returns the requested decision, forwarding networkPassphrase', async () => {
+    const extractDestination = vi.fn().mockReturnValue({ destination: 'GDEST', asset: 'USD:GISSUER' })
     const getScore = vi.fn().mockResolvedValue(42)
     const requestDecision = vi.fn().mockResolvedValue('proceed')
 
-    const outcome = await resolveOutcome('some-xdr', {
-      extractDestination: () => ({ destination: 'GDEST', asset: 'USD:GISSUER' }),
-      getScore,
-      requestDecision,
-    })
+    const outcome = await resolveOutcome(
+      'some-xdr',
+      {
+        extractDestination,
+        getScore,
+        requestDecision,
+      },
+      'Public Global Stellar Network ; September 2015',
+    )
 
+    expect(extractDestination).toHaveBeenCalledWith('some-xdr', 'Public Global Stellar Network ; September 2015')
     expect(getScore).toHaveBeenCalledWith('GDEST')
     expect(requestDecision).toHaveBeenCalledWith({ destination: 'GDEST', asset: 'USD:GISSUER', score: 42 })
     expect(outcome).toBe('proceed')

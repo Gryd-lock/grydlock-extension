@@ -18,6 +18,17 @@ function assetLabel(op: Record<string, unknown>): string | undefined {
   return `${asset.getCode()}:${asset.getIssuer()}`
 }
 
+const NETWORK_MAP: Record<string, string> = {
+  PUBLIC: Networks.PUBLIC,
+  TESTNET: Networks.TESTNET,
+  FUTURENET: Networks.FUTURENET,
+  SANDBOX: Networks.SANDBOX,
+}
+
+export function resolveNetworkPassphrase(networkOrPassphrase: string = Networks.PUBLIC): string {
+  return NETWORK_MAP[networkOrPassphrase.toUpperCase()] ?? networkOrPassphrase
+}
+
 /**
  * Extracts the single destination account an unsigned transaction pays to.
  * Returns null (never throws) when the XDR is malformed or the transaction
@@ -27,11 +38,11 @@ function assetLabel(op: Record<string, unknown>): string | undefined {
  */
 export function extractDestination(
   xdr: string,
-  networkPassphrase: string = Networks.TESTNET,
+  networkPassphrase: string = Networks.PUBLIC,
 ): DecodedDestination | null {
   let parsed
   try {
-    parsed = TransactionBuilder.fromXDR(xdr, networkPassphrase)
+    parsed = TransactionBuilder.fromXDR(xdr, resolveNetworkPassphrase(networkPassphrase))
   } catch {
     return null
   }

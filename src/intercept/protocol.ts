@@ -8,6 +8,7 @@ export interface RuntimeSignRequestMessage {
   type: 'SIGN_REQUEST'
   requestId: string
   xdr: string
+  networkPassphrase?: string
 }
 
 export interface RuntimeSignOutcomeMessage {
