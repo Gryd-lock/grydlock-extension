@@ -149,6 +149,12 @@ src/background/background.ts      (service worker)
   both the popup's default (loading/error/retry/dev-slider) and intercept-mode rendering, against a
   mocked adapter and a stubbed `chrome.runtime`.
 
+## Security
+
+Report suspected vulnerabilities privately using [SECURITY.md](SECURITY.md). The
+[threat model](docs/threat-model.md) documents the extension's trust boundaries, current
+guarantees, explicit non-goals, known gaps, and security-hardening roadmap.
+
 ## Develop
 
 1. `npm install`
