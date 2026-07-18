@@ -52,11 +52,12 @@ describe('tierForScore', () => {
 
 // ---------------------------------------------------------------------------
 // WCAG AA contrast regression tests
-// Popup background is white (#ffffff); all tier colours must meet 4.5:1.
+// Popup backgrounds are white (#ffffff) in light mode and #111827 in dark mode.
 // If a tier colour change breaks this test, the PR is caught before merge.
 // ---------------------------------------------------------------------------
 
-const POPUP_BG = '#ffffff'
+const LIGHT_POPUP_BG = '#ffffff'
+const DARK_POPUP_BG = '#111827'
 const WCAG_AA_NORMAL_TEXT = 4.5
 
 describe('tier colour WCAG AA contrast', () => {
@@ -64,10 +65,20 @@ describe('tier colour WCAG AA contrast', () => {
 
   it('every tier colour meets ≥ 4.5:1 contrast against white (#ffffff)', () => {
     for (const tier of tiers) {
-      const ratio = contrastRatio(tier.colour, POPUP_BG)
+      const ratio = contrastRatio(tier.colour, LIGHT_POPUP_BG)
       expect(
         ratio,
         `${tier.tier} (${tier.colour}) contrast ${ratio.toFixed(2)}:1 < ${WCAG_AA_NORMAL_TEXT}:1`,
+      ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT)
+    }
+  })
+
+  it('every dark-mode tier colour meets ≥ 4.5:1 contrast against #111827', () => {
+    for (const tier of tiers) {
+      const ratio = contrastRatio(tier.darkColour, DARK_POPUP_BG)
+      expect(
+        ratio,
+        `${tier.tier} (${tier.darkColour}) contrast ${ratio.toFixed(2)}:1 < ${WCAG_AA_NORMAL_TEXT}:1`,
       ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT)
     }
   })
@@ -78,4 +89,3 @@ describe('tier colour WCAG AA contrast', () => {
     }
   })
 })
-
