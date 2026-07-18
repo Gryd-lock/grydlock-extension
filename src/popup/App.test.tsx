@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { axe, toHaveNoViolations } from 'jest-axe'
 import App from './App'
 import * as adapter from '../adapter/oracleAdapter'
+
+expect.extend(toHaveNoViolations)
 
 describe('App', () => {
   beforeEach(() => {
@@ -16,9 +19,14 @@ describe('App', () => {
 
   it('renders the matching tier once the adapter resolves', async () => {
     vi.spyOn(adapter, 'getScore').mockResolvedValue(85)
-    render(<App />)
+    const { container } = render(<App />)
     expect(await screen.findByText(/critical risk/i)).toBeInTheDocument()
     expect(screen.getByText('Score: 85')).toBeInTheDocument()
+    expect(screen.getByText(/critical risk/i).closest('.popup')).toHaveAttribute('data-tier', 'critical')
+    expect(screen.getByText(/critical risk/i).closest('.popup')).toHaveStyle({
+      '--tier-accent-light': '#c62828',
+      '--tier-accent-dark': '#ef9a9a',
+    })
   })
 
   it('shows a retry option when the adapter call fails', async () => {
@@ -59,17 +67,22 @@ describe('App in intercept mode', () => {
     window.history.pushState(null, '', '/')
   })
 
-  it('renders the tier from URL params without calling the adapter', () => {
+  it('renders the tier from URL params without calling the adapter', async () => {
     const getScoreSpy = vi.spyOn(adapter, 'getScore')
     window.history.pushState(
       null,
       '',
       '?mode=intercept&requestId=req-1&destination=GDEST&score=85',
     )
-    render(<App />)
+    const { container } = render(<App />)
     expect(screen.getByText(/critical risk/i)).toBeInTheDocument()
     expect(screen.getByText('GDEST')).toBeInTheDocument()
+    expect(screen.getByText(/critical risk/i).closest('.popup')).toHaveAttribute('data-tier', 'critical')
     expect(getScoreSpy).not.toHaveBeenCalled()
+    
+    // a11y check
+    const results = await axe(container)
+    expect(results).toHaveNoViolations()
   })
 
   it('sends the decision and closes on Proceed', () => {
@@ -104,5 +117,26 @@ describe('App in intercept mode', () => {
       decision: 'cancel',
     })
     expect(closeSpy).toHaveBeenCalled()
+  })
+
+  it('sends cancel and closes when Escape is pressed', async () => {
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=85')
+    const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => {})
+    render(<App />)
+
+    await userEvent.setup().keyboard('{Escape}')
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'DECISION_MADE',
+      requestId: 'req-1',
+      decision: 'cancel',
+    })
+    expect(closeSpy).toHaveBeenCalled()
+  })
+
+  it('focuses Cancel so a critical warning can be dismissed immediately', () => {
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=85')
+    render(<App />)
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
   })
 })

@@ -1,11 +1,31 @@
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
+  background: var(--popup-bg);
+  color: var(--popup-text);
+}
+
+:root {
+  color-scheme: light dark;
+  --popup-bg: #ffffff;
+  --popup-surface: #ffffff;
+  --popup-text: #111827;
+  --popup-muted: #666666;
+  --popup-message: #444444;
+  --popup-border: #cccccc;
+  --popup-button-neutral: #eeeeee;
+  --popup-button-neutral-text: #111827;
+  --popup-button-primary: #1565c0;
+  --popup-button-primary-text: #ffffff;
+  --tier-accent: var(--tier-accent-light);
 }
 
 .popup {
   width: 280px;
   padding: 16px;
+  background: var(--popup-surface);
+  color: var(--popup-text);
+  border-top: 4px solid var(--tier-accent);
 }
 
 .popup h1 {
@@ -15,7 +35,7 @@ body {
 
 .destination {
   font-size: 11px;
-  color: #666;
+  color: var(--popup-muted);
   word-break: break-all;
   margin: 0 0 8px;
 }
@@ -27,7 +47,7 @@ body {
 
 .message {
   font-size: 13px;
-  color: #444;
+  color: var(--popup-message);
   margin: 0 0 16px;
 }
 
@@ -36,30 +56,53 @@ body {
   gap: 8px;
 }
 
-.actions button {
-  flex: 1;
+.popup button {
   padding: 8px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
 }
 
-.actions .cancel {
-  background: #eee;
+.actions button {
+  flex: 1;
 }
 
-.actions .proceed {
-  background: #1565c0;
-  color: white;
+.cancel {
+  background: var(--popup-button-neutral);
+  color: var(--popup-button-neutral-text);
+}
+
+.proceed {
+  background: var(--popup-button-primary);
+  color: var(--popup-button-primary-text);
 }
 
 .dev-slider {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px dashed #ccc;
+  border-top: 1px dashed var(--popup-border);
   font-size: 12px;
 }
 
 .dev-slider input {
   width: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --popup-bg: #0b1220;
+    --popup-surface: #111827;
+    --popup-text: #f3f4f6;
+    --popup-muted: #cbd5e1;
+    --popup-message: #e5e7eb;
+    --popup-border: #475569;
+    --popup-button-neutral: #334155;
+    --popup-button-neutral-text: #f8fafc;
+    --popup-button-primary: #60a5fa;
+    --popup-button-primary-text: #0b1220;
+  }
+
+  .popup {
+    --tier-accent: var(--tier-accent-dark);
+  }
 }
