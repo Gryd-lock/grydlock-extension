@@ -14,6 +14,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         popup: 'src/popup/index.html',
+        history: 'src/history/index.html',
       },
     },
   },

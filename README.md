@@ -72,11 +72,25 @@ grydlock-extension/
 │   ├── adapter/                # Oracle adapter stub — getScore(destination)
 │   ├── background/             # Service worker: decodes XDR, scores, opens the warning popup
 │   ├── decode/                  # XDR → destination extraction (Stellar SDK)
-│   ├── intercept/                # Freighter signTransaction proxy + message-bridge protocol
-│   ├── lib/                       # Score → tier mapping
-│   └── popup/                      # React warning UI — default (dev) and intercept modes
+│   ├── history/                  # Decision history page (extension options page)
+│   ├── intercept/                 # Freighter signTransaction proxy + message-bridge protocol
+│   ├── lib/                        # Score → tier mapping, local decision history storage
+│   └── popup/                       # React warning UI — default (dev) and intercept modes
 └── README.md
 ```
+
+## Decision History
+
+Every proceed/cancel decision made in the warning popup is recorded locally: destination,
+asset (when present), score, tier, decision, and timestamp. Open it via the extension's
+**Options** page (right-click the toolbar icon → Options, or `chrome://extensions` → Gryd Lock →
+Details → Extension options).
+
+Privacy:
+
+- History lives only in `chrome.storage.local` on your device — it is never transmitted anywhere.
+- Storage is capped to the most recent 200 decisions; older entries are dropped automatically.
+- A **Clear history** button on the page deletes everything at once.
 
 ## How the Pieces Connect
 
@@ -209,6 +223,7 @@ that unit tests cannot provide:
 - [x] Popup renders one score across the four tiers. _(stub)_
 - [x] Fetch the score through the oracle adapter (stub score) — prove the query path end to end.
 - [x] Freighter interception: proxy `signTransaction`, decode the XDR, extract the destination, route it through the adapter.
+- [x] Local decision history: persist proceed/cancel decisions to `chrome.storage.local` (capped, on-device only) with a history page.
 - [ ] Swap the stub score for a live one from the adapter.
 - [ ] Generalise interception beyond Freighter.
 
