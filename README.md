@@ -71,6 +71,9 @@ grydlock-extension/
 │   ├── intercept/                # Freighter signTransaction proxy + message-bridge protocol
 │   ├── lib/                       # Score → tier mapping
 │   └── popup/                      # React warning UI — default (dev) and intercept modes
+├── docs/
+│   └── adr/                       # Architecture decision records and proposal template
+├── CONTRIBUTING.md                # Contributor workflow, test expectations, PR/ADR process
 └── README.md
 ```
 
@@ -169,6 +172,15 @@ npm run build      # tsc -b && vite build && node scripts/build-extension.mjs
 ```
 
 All four run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull request.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, architecture guardrails, testing
+expectations, required quality gates, and the pull request checklist.
+
+Changes that introduce or alter shared abstractions, browser-context responsibilities, message
+contracts, interception semantics, or security boundaries should follow the lightweight
+[Architecture Decision Record process](docs/adr/README.md).
 
 ## Roadmap
 
