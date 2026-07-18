@@ -24,6 +24,10 @@ function InterceptView({ params }: { params: URLSearchParams }) {
   const asset = params.get('asset') ?? undefined
   const score = Number(params.get('score') ?? '0')
   const tier = tierForScore(score)
+  
+  const memoType = params.get('memoType')
+  const memoValue = params.get('memoValue')
+  const memo = memoType && memoValue ? { type: memoType, value: memoValue } : undefined
 
   function respond(decision: 'proceed' | 'cancel') {
     const message: RuntimeDecisionMadeMessage = { type: 'DECISION_MADE', requestId, decision }
@@ -36,6 +40,7 @@ function InterceptView({ params }: { params: URLSearchParams }) {
       tier={tier}
       score={score}
       destination={asset ? `${destination} (${asset})` : destination}
+      memo={memo}
       onCancel={() => respond('cancel')}
       onProceed={() => respond('proceed')}
     />

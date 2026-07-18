@@ -5,6 +5,7 @@ interface TierWarningProps {
   tier: TierInfo
   score: number
   destination?: string
+  memo?: { type: string; value: string }
   onCancel: () => void
   onProceed: () => void
   devControl?: ReactNode
@@ -14,6 +15,7 @@ export default function TierWarning({
   tier,
   score,
   destination,
+  memo,
   onCancel,
   onProceed,
   devControl,
@@ -28,6 +30,11 @@ export default function TierWarning({
         {tier.label} risk
       </h1>
       {destination && <p className="destination">{destination}</p>}
+      {memo && (
+        <p className="memo">
+          <strong>Memo ({memo.type}):</strong> {memo.value}
+        </p>
+      )}
       <p className="score">Score: {score}</p>
       <p className="message">{tier.message}</p>
       <div className="actions">

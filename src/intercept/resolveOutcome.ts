@@ -1,9 +1,9 @@
 import type { Decision, Outcome } from './protocol'
 
 export interface ResolveOutcomeDeps {
-  extractDestination: (xdr: string) => { destination: string; asset?: string } | null
+  extractDestination: (xdr: string) => { destination: string; asset?: string; memo?: { type: string; value: string } } | null
   getScore: (destination: string) => Promise<number>
-  requestDecision: (info: { destination: string; asset?: string; score: number }) => Promise<Decision>
+  requestDecision: (info: { destination: string; asset?: string; score: number; memo?: { type: string; value: string } }) => Promise<Decision>
 }
 
 /**
@@ -17,5 +17,5 @@ export async function resolveOutcome(xdr: string, deps: ResolveOutcomeDeps): Pro
   if (!decoded) return 'allow'
 
   const score = await deps.getScore(decoded.destination)
-  return deps.requestDecision({ destination: decoded.destination, asset: decoded.asset, score })
+  return deps.requestDecision({ destination: decoded.destination, asset: decoded.asset, score, memo: decoded.memo })
 }

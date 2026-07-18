@@ -3,6 +3,7 @@ import { Asset, FeeBumpTransaction, Networks, TransactionBuilder } from '@stella
 export interface DecodedDestination {
   destination: string
   asset?: string
+  memo?: { type: string; value: string }
 }
 
 const DESTINATION_OPERATION_TYPES = new Set([
@@ -51,5 +52,19 @@ export function extractDestination(
     return null
   }
 
-  return { destination: [...destinations][0], asset }
+  let memo: { type: string; value: string } | undefined
+  if (tx.memo && tx.memo.type !== 'none') {
+    const val = tx.memo.value
+    let valueStr: string
+    if (tx.memo.type === 'text' && Buffer.isBuffer(val)) {
+      valueStr = val.toString('utf-8')
+    } else if (Buffer.isBuffer(val)) {
+      valueStr = val.toString('hex')
+    } else {
+      valueStr = String(val)
+    }
+    memo = { type: tx.memo.type, value: valueStr }
+  }
+
+  return { destination: [...destinations][0], asset, memo }
 }
