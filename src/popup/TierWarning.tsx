@@ -3,7 +3,7 @@ import type { TierInfo } from '../lib/tiers'
 
 interface TierWarningProps {
   tier: TierInfo
-  score: number
+  score: number | null
   destination?: string
   onCancel: () => void
   onProceed: () => void
@@ -28,7 +28,7 @@ export default function TierWarning({
         {tier.label} risk
       </h1>
       {destination && <p className="destination">{destination}</p>}
-      <p className="score">Score: {score}</p>
+      <p className="score">{score !== null ? `Score: ${score}` : 'Score: N/A'}</p>
       <p className="message">{tier.message}</p>
       <div className="actions">
         <button className="cancel" onClick={onCancel}>

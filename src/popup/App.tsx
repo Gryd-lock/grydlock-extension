@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getScore } from '../adapter/oracleAdapter'
-import { tierForScore } from '../lib/tiers'
+import { tierForScore, UNSCORED_TIER_INFO } from '../lib/tiers'
 import DevScoreSlider from './DevScoreSlider'
 import TierWarning from './TierWarning'
 import type { RuntimeDecisionMadeMessage } from '../intercept/protocol'
@@ -22,8 +22,13 @@ function InterceptView({ params }: { params: URLSearchParams }) {
   const requestId = params.get('requestId') ?? ''
   const destination = params.get('destination') ?? ''
   const asset = params.get('asset') ?? undefined
-  const score = Number(params.get('score') ?? '0')
-  const tier = tierForScore(score)
+  const scoreParam = params.get('score')
+  // A missing score param means the background worker could not reach the
+  // oracle. Treat this as a distinct "unscored" state — never conflate it
+  // with a low-risk scored result or the silent "no destination" allow path.
+  const isUnscored = scoreParam === null
+  const score = isUnscored ? 0 : Number(scoreParam)
+  const tier = isUnscored ? UNSCORED_TIER_INFO : tierForScore(score)
 
   function respond(decision: 'proceed' | 'cancel') {
     const message: RuntimeDecisionMadeMessage = { type: 'DECISION_MADE', requestId, decision }
@@ -34,7 +39,7 @@ function InterceptView({ params }: { params: URLSearchParams }) {
   return (
     <TierWarning
       tier={tier}
-      score={score}
+      score={isUnscored ? null : score}
       destination={asset ? `${destination} (${asset})` : destination}
       onCancel={() => respond('cancel')}
       onProceed={() => respond('proceed')}
