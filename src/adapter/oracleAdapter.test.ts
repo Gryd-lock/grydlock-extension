@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { getScore } from './oracleAdapter'
 
 describe('getScore', () => {
@@ -13,4 +13,14 @@ describe('getScore', () => {
     const b = await getScore('SAME')
     expect(a).toBe(b)
   })
-})
+
+  it('returns fallback -1 on timeout', async () => {
+    vi.useFakeTimers();
+    const promise = getScore('TIMEOUTDEST', { timeoutMs: 50 });
+    // advance timers past the internal delay (150ms) and timeout (50ms)
+    vi.advanceTimersByTime(200);
+    const result = await promise;
+    expect(result).toBe(-1);
+    vi.useRealTimers();
+  });
+});

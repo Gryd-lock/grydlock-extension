@@ -2,7 +2,7 @@ import type { Decision, Outcome } from './protocol'
 
 export interface ResolveOutcomeDeps {
   extractDestination: (xdr: string) => { destination: string; asset?: string } | null
-  getScore: (destination: string) => Promise<number>
+  getScore: (destination: string, options?: { timeoutMs?: number; signal?: AbortSignal }) => Promise<number>
   requestDecision: (info: { destination: string; asset?: string; score: number }) => Promise<Decision>
 }
 

@@ -172,6 +172,12 @@ npm run build      # tsc -b && vite build && node scripts/build-extension.mjs
 
 All four run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull request. The linting step automatically enforces that no network-call APIs (like `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `navigator.sendBeacon`) or Horizon server connections are initiated outside the `src/adapter/` directory.
 
+## Timeout Behavior for getScore
+
+`getScore` now includes a built‑in timeout to prevent the signing flow from hanging indefinitely. The default timeout is **5 seconds** and can be overridden per call via the optional `options` parameter. If the operation exceeds the timeout, the function resolves with a fallback score of `-1`, which is treated as an unknown score and results in a safe warning tier.
+
+You can configure the default timeout by modifying `src/adapter/config.ts` (`DEFAULT_GET_SCORE_TIMEOUT_MS`). Tests use a shorter timeout to verify the fallback behaviour.
+
 ## Roadmap
 
 - [x] Popup renders one score across the four tiers. _(stub)_
