@@ -23,5 +23,15 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+  {
+    files: ['playwright.config.ts', 'e2e/**/*.ts'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+  },
   prettier,
 )
