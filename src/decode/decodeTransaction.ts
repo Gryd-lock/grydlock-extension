@@ -4,6 +4,7 @@ import type { OperationRecord } from '@stellar/stellar-sdk'
 export interface DecodedDestination {
   destination: string
   asset?: string
+  memo?: { type: string; value: string }
 }
 
 interface OperationDestinations {
@@ -14,6 +15,17 @@ interface OperationDestinations {
 function assetLabel(asset: Asset | undefined): string | undefined {
   if (!asset || asset.isNative()) return undefined
   return `${asset.getCode()}:${asset.getIssuer()}`
+}
+
+const NETWORK_MAP: Record<string, string> = {
+  PUBLIC: Networks.PUBLIC,
+  TESTNET: Networks.TESTNET,
+  FUTURENET: Networks.FUTURENET,
+  SANDBOX: Networks.SANDBOX,
+}
+
+export function resolveNetworkPassphrase(networkOrPassphrase: string = Networks.PUBLIC): string {
+  return NETWORK_MAP[networkOrPassphrase.toUpperCase()] ?? networkOrPassphrase
 }
 
 /**
@@ -55,17 +67,14 @@ function destinationsFor(op: OperationRecord): OperationDestinations {
 export function extractDestination(
   xdr: string,
   networkPassphrase: string = Networks.TESTNET,
-): DecodedDestination | null {
+): DecodedBatch | null {
   let parsed
   try {
-    parsed = TransactionBuilder.fromXDR(xdr, networkPassphrase)
-  } catch {
-    return null
-  }
+    const parsed = TransactionBuilder.fromXDR(xdr, networkPassphrase)
+    const tx = parsed instanceof FeeBumpTransaction ? parsed.innerTransaction : parsed
 
   const tx = parsed instanceof FeeBumpTransaction ? parsed.innerTransaction : parsed
-  const destinations = new Set<string>()
-  let asset: string | undefined
+  const seen = new Map<string, string>()
 
   for (const op of tx.operations) {
     const resolved = destinationsFor(op)
@@ -74,9 +83,14 @@ export function extractDestination(
     asset = resolved.asset
   }
 
-  if (destinations.size !== 1) {
+  if (seen.size === 0) {
     return null
   }
 
-  return { destination: [...destinations][0], asset }
+  return {
+    destinations: [...seen.entries()].map(([destination, asset]) => ({
+      destination,
+      asset: asset || undefined,
+    })),
+  }
 }

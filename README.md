@@ -12,6 +12,8 @@
 
 This is the product. It runs entirely in the user's browser. It hooks the wallet signing flow, decodes the pending transaction, requests a risk score for the destination, and renders a four-tier warning. It never blocks — it warns, and the user decides.
 
+For detailed information on data handling, data protection, and our no-telemetry architecture, see [PRIVACY.md](file:///c:/Users/USER/grydlock-extension/PRIVACY.md).
+
 > **Status:** Early build. A Freighter `signTransaction` proxy decodes the destination, routes it through the oracle adapter, and shows the warning before signing. A live oracle connection is **not yet built** — see the roadmap.
 
 ## What it does
@@ -41,8 +43,8 @@ User proceeds or cancels — the extension never blocks
 | ------ | -------- | ----------------------------------------- |
 | 0–20   | Low      | Green indicator, proceed                  |
 | 21–50  | Elevated | Soft warning                              |
-| 51–75  | High     | Strong warning, require explicit confirm  |
-| 76–100 | Critical | Recommend abort, explain why              |
+| 51–75  | High     | Strong warning, checkbox enables proceed  |
+| 76–100 | Critical | Recommend abort, type `CRITICAL` to proceed |
 
 ## Why Freighter First
 
@@ -113,32 +115,35 @@ to `window`, and Freighter's own content script replies the same way. That `post
 the actual interception point:
 
 ```
-dApp posts { source: FREIGHTER_EXTERNAL_MSG_REQUEST, type: SUBMIT_TRANSACTION, transactionXdr }
+dApp posts { source: FREIGHTER_EXTERNAL_MSG_REQUEST, type: SUBMIT_TRANSACTION, transactionXdr, networkPassphrase }
         │
         ▼
 src/intercept/mainWorldEntry.ts   (MAIN world; grabs the request via stopImmediatePropagation()
         │                          before Freighter's own listener sees it)
         │  window.postMessage (Gryd Lock's own internal request/response, separate from Freighter's)
         ▼
-src/intercept/bridgeEntry.ts      (isolated world; only place with chrome.* API access)
+src/intercept/bridgeEntry.ts      (isolated world; only place with chrome.* API access;
+        │                          generates the real requestId here, never in MAIN world,
+        │                          so a page script can't observe it and forge a decision)
         │  chrome.runtime.sendMessage
         ▼
 src/background/background.ts      (service worker)
         │
         ├─▶ src/decode/decodeTransaction.ts → extractDestination(xdr)
-        │      no single destination? → outcome 'allow', nothing shown, request passes through
+        │      returns all distinct destinations, not just one
         │
-        ├─▶ src/adapter/oracleAdapter.ts → getScore(destination)
+        ├─▶ each destination scored independently via src/adapter/oracleAdapter.ts
         │
-        ├─▶ chrome.action.setBadgeText / setBadgeBackgroundColor (signals active review state with tier accent color)
-        │
-        └─▶ chrome.windows.create(popup?mode=intercept&requestId&destination&score)
+        └─▶ worst-tier destination opens the popup with all destinations
                    │
                    ▼
-             src/popup/App.tsx (intercept mode) renders the tier + destination + Proceed/Cancel
+             src/popup/App.tsx (intercept mode) renders tier + worst-score + every destination
                    │  chrome.runtime.sendMessage({ type: 'DECISION_MADE', ... })
+                   │  (popup closed any other way → chrome.windows.onRemoved fires instead,
+                   │   background resolves that request to 'cancel' so it can't hang forever)
                    ▼
-        background resolves the pending request → bridge → mainWorld
+        background only resolves the pending request if DECISION_MADE's sender window matches
+        the popup it created for that requestId (otherwise ignored) → bridge → mainWorld
                    │
                    ▼
         'cancel'            → mainWorld synthesizes a decline FREIGHTER_EXTERNAL_MSG_RESPONSE;
@@ -170,7 +175,7 @@ src/background/background.ts      (service worker)
 - **Pure logic**: `src/intercept/resolveOutcome.ts` is the testable core — given a decode function,
   a score function, and a decision function, it returns `'allow' | 'proceed' | 'cancel'` with no
   Chrome APIs involved, so it's covered by ordinary Vitest unit tests.
-- **Graceful degradation**: transactions with no single determinable destination (malformed XDR, no
+- **Graceful degradation & timeouts**: transactions with no single determinable destination (malformed XDR, no
   destination-bearing operation, or multiple distinct destinations) resolve to `'allow'` — Gryd Lock
   never blocks what it can't assess.
 - **Destination-bearing operations**: `payment`, `pathPaymentStrictSend`/`pathPaymentStrictReceive`,
@@ -186,6 +191,12 @@ src/background/background.ts      (service worker)
   both the popup's default (loading/error/retry/dev-slider) and intercept-mode rendering, against a
   mocked adapter and a stubbed `chrome.runtime`, including the theme-aware tier accent variables
   used by the popup.
+
+## Security
+
+Report suspected vulnerabilities privately using [SECURITY.md](SECURITY.md). The
+[threat model](docs/threat-model.md) documents the extension's trust boundaries, current
+guarantees, explicit non-goals, known gaps, and security-hardening roadmap.
 
 ## Develop
 
@@ -209,6 +220,9 @@ npm run build          # tsc -b && vite build && node scripts/build-extension.mj
 ```
 
 All four run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull request.
+Popup visual regression snapshots run in CI as well via `npm run test:visual`; if a UI change is
+intentional, refresh baselines locally with `npx playwright test --update-snapshots` and commit the
+updated files from `tests/visual/popup.spec.ts-snapshots/`.
 
 **Coverage policy.** Thresholds are configured in `vite.config.ts` and enforced by
 `npm run test:coverage` (CI runs this instead of bare `vitest run`). The following
@@ -220,6 +234,21 @@ that unit tests cannot provide:
 - `src/popup/main.tsx` — React entry-point boilerplate.
 - `src/intercept/protocol.ts` — constant and type definitions only.
 
+## Timeout Behavior for getScore
+
+`getScore` now includes a built‑in timeout to prevent the signing flow from hanging indefinitely. The default timeout is **5 seconds** and can be overridden per call via the optional `options` parameter. If the operation exceeds the timeout, the function resolves with a fallback score of `-1`, which is treated as an unknown score and results in a safe warning tier.
+
+You can configure the default timeout by modifying `src/adapter/config.ts` (`DEFAULT_GET_SCORE_TIMEOUT_MS`). Tests use a shorter timeout to verify the fallback behaviour.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, architecture guardrails, testing
+expectations, required quality gates, and the pull request checklist.
+
+Changes that introduce or alter shared abstractions, browser-context responsibilities, message
+contracts, interception semantics, or security boundaries should follow the lightweight
+[Architecture Decision Record process](docs/adr/README.md).
+
 ## Roadmap
 
 - [x] Popup renders one score across the four tiers. _(stub)_
@@ -230,3 +259,24 @@ that unit tests cannot provide:
 - [ ] Generalise interception beyond Freighter.
 
 > **Do not build real interception until the adapter returns a real score.** Interception without a working score source is a warning with nothing to warn about.
+
+## Dependency Maintenance
+
+Dependabot checks npm dependencies and GitHub Actions every Monday. Updates are grouped so routine
+tooling changes do not obscure runtime changes that affect the wallet-warning path.
+
+Dependabot alerts and security updates are controlled in repository settings and should remain
+enabled. This file configures the scheduled version-update pull requests.
+
+The auto-merge policy is intentionally narrow:
+
+- patch updates to direct development dependencies may auto-merge;
+- patch updates to GitHub Actions may auto-merge;
+- runtime dependencies, indirect dependencies, and every minor or major update require human review;
+- a Dependabot PR with maintainer-authored changes is no longer auto-merge eligible.
+
+Auto-merge does not replace CI. The repository must enable GitHub auto-merge, protect `main`, and
+require the existing CI `verify` job. Repository or organization Actions settings must also allow
+the workflow token to approve pull requests. If those settings are absent, maintainers should merge
+Dependabot PRs manually after `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`
+pass.

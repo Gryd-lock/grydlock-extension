@@ -49,7 +49,7 @@ describe('TierWarning default focus', () => {
 
 describe('TierWarning keyboard navigation', () => {
   it('moves focus forwards with Tab and wraps at the end', async () => {
-    const { user, cancel, proceed } = renderWarning()
+    const { user, cancel, proceed } = renderWarning(10)
     expect(cancel).toHaveFocus()
 
     await user.tab()
@@ -60,7 +60,7 @@ describe('TierWarning keyboard navigation', () => {
   })
 
   it('moves focus backwards with Shift+Tab and wraps at the start', async () => {
-    const { user, cancel, proceed } = renderWarning()
+    const { user, cancel, proceed } = renderWarning(10)
     expect(cancel).toHaveFocus()
 
     await user.tab({ shift: true })
@@ -71,17 +71,18 @@ describe('TierWarning keyboard navigation', () => {
   })
 
   it('includes every interactive element in the cycle', async () => {
-    const { user, cancel, proceed } = renderWarning(
+    const { user, cancel } = renderWarning(
       85,
       <DevScoreSlider score={85} onChange={() => {}} />,
     )
+    const confirmation = screen.getByLabelText(/type critical to enable proceed/i)
     const slider = screen.getByLabelText(/dev: override score/i)
 
     expect(cancel).toHaveFocus()
     await user.tab()
-    expect(proceed).toHaveFocus()
-    await user.tab()
     expect(slider).toHaveFocus()
+    await user.tab()
+    expect(confirmation).toHaveFocus()
     await user.tab()
     expect(cancel).toHaveFocus()
   })
@@ -149,7 +150,7 @@ describe('TierWarning button activation', () => {
   })
 
   it('activates Proceed with Enter once it is tabbed to', async () => {
-    const { user, onProceed, onCancel } = renderWarning()
+    const { user, onProceed, onCancel } = renderWarning(10)
     await user.tab()
     await user.keyboard('{Enter}')
     expect(onProceed).toHaveBeenCalledTimes(1)
@@ -157,7 +158,7 @@ describe('TierWarning button activation', () => {
   })
 
   it('activates Proceed with Space once it is tabbed to', async () => {
-    const { user, onProceed, onCancel } = renderWarning()
+    const { user, onProceed, onCancel } = renderWarning(10)
     await user.tab()
     await user.keyboard(' ')
     expect(onProceed).toHaveBeenCalledTimes(1)
@@ -173,7 +174,7 @@ describe('TierWarning mouse interaction', () => {
   })
 
   it('still proceeds on click', async () => {
-    const { user, onProceed, proceed } = renderWarning()
+    const { user, onProceed, proceed } = renderWarning(10)
     await user.click(proceed)
     expect(onProceed).toHaveBeenCalledTimes(1)
   })

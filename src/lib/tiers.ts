@@ -1,4 +1,4 @@
-export type Tier = 'low' | 'elevated' | 'high' | 'critical'
+export type Tier = 'low' | 'elevated' | 'high' | 'critical' | 'unscored'
 
 export interface TierInfo {
   tier: Tier
@@ -60,6 +60,19 @@ const TIERS: Array<{ max: number; info: TierInfo }> = [
     },
   },
 ]
+
+/**
+ * Sentinel TierInfo used when the risk oracle is unreachable and no score
+ * could be obtained. Must be visually distinct from every scored tier so
+ * the user can clearly tell this is an assessment failure, not a low-risk result.
+ */
+export const UNSCORED_TIER_INFO: TierInfo = {
+  tier: 'unscored',
+  label: 'Unknown',
+  colour: '#5c6bc0', // indigo — distinct from all scored-tier colours
+  icon: '?',
+  message: "Couldn't reach the risk oracle. Proceed only if you fully trust this destination.",
+}
 
 export function tierForScore(score: number): TierInfo {
   const clamped = Math.max(0, Math.min(100, score))

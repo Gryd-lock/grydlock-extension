@@ -8,6 +8,7 @@ export interface RuntimeSignRequestMessage {
   type: 'SIGN_REQUEST'
   requestId: string
   xdr: string
+  networkPassphrase?: string
 }
 
 export interface RuntimeSignOutcomeMessage {
@@ -20,4 +21,12 @@ export interface RuntimeDecisionMadeMessage {
   type: 'DECISION_MADE'
   requestId: string
   decision: Decision
+}
+
+export interface RuntimeSignRequestInfo {
+  destination: string
+  kind: 'payment' | 'contractInvocation'
+  asset?: string
+  function?: string
+  score: number
 }
