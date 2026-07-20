@@ -215,6 +215,11 @@ export default function TierWarning({
           '--tier-accent-dark': tier.darkColour,
         } as CSSProperties
       }
+      ref={popupRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tier-warning-title"
+      aria-describedby={describedByIds}
     >
       <h1 id="tier-warning-title" aria-live="assertive">
         <span className="tier-icon" aria-hidden="true">{tier.icon}</span>{' '}

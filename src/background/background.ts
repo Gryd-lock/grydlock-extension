@@ -21,15 +21,20 @@ export function requestDecision(
   requestId: string,
   info: { destinations: { destination: string; asset?: string }[]; scores: Array<{ destination: string; asset?: string; score: number }>; worstScore: number },
 ): Promise<Decision> {
+  const tierInfo = tierForScore(info.score)
+  // Show badge while decision is pending
+  chrome.action.setBadgeText({ text: '!' })
+  chrome.action.setBadgeBackgroundColor({ color: tierInfo.colour })
+
   return new Promise((resolve) => {
+    // Store resolver for later
     pendingDecisions.set(requestId, (decision) => {
-      // History stays on-device (chrome.storage.local); a write failure must
-      // never block the signing flow, so record fire-and-forget.
+      // Record decision asynchronously
       void recordDecision({
         destination: info.destination,
         asset: info.asset,
         score: info.score,
-        tier: tierForScore(info.score).tier,
+        tier: tierInfo.tier,
         decision,
         timestamp: Date.now(),
       }).catch(() => {})
@@ -192,6 +197,35 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage, sender, sendResp
     const resolve = pendingDecisions.get(message.requestId)
     resolve?.(message.decision)
   }
+});
+
+chrome.runtime.onMessage.addListener(
+  (message: IncomingMessage, _sender, sendResponse) => {
+    if (message.type === 'SIGN_REQUEST') {
+      resolveOutcome(message.xdr, {
+        extractDestination,
+        getScore,
+        requestDecision: (info) => requestDecision(message.requestId, info),
+      }).then((outcome) => {
+        const response: RuntimeSignOutcomeMessage = {
+          type: 'SIGN_OUTCOME',
+          requestId: message.requestId,
+          outcome,
+        }
+        sendResponse(response)
+      })
+      return true
+    }
+
+    if (message.type === 'DECISION_MADE') {
+      const resolve = pendingDecisions.get(message.requestId)
+      resolve?.(message.decision)
+      pendingDecisions.delete(message.requestId)
+      pendingWindows.delete(message.requestId)
+      if (pendingDecisions.size === 0) {
+        chrome.action.setBadgeText({ text: '' })
+      }
+    }
 
     return undefined
   })
