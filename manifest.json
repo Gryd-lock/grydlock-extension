@@ -6,6 +6,11 @@
   "action": {
     "default_popup": "src/popup/index.html"
   },
+  "options_ui": {
+    "page": "src/history/index.html",
+    "open_in_tab": true
+  },
+  "permissions": ["storage"],
   "background": {
     "service_worker": "background.js"
   },

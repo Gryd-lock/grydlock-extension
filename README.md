@@ -12,6 +12,8 @@
 
 This is the product. It runs entirely in the user's browser. It hooks the wallet signing flow, decodes the pending transaction, requests a risk score for the destination, and renders a four-tier warning. It never blocks — it warns, and the user decides.
 
+For detailed information on data handling, data protection, and our no-telemetry architecture, see [PRIVACY.md](file:///c:/Users/USER/grydlock-extension/PRIVACY.md).
+
 > **Status:** Early build. A Freighter `signTransaction` proxy decodes the destination, routes it through the oracle adapter, and shows the warning before signing. A live oracle connection is **not yet built** — see the roadmap.
 
 ## What it does
@@ -41,12 +43,16 @@ User proceeds or cancels — the extension never blocks
 | ------ | -------- | ----------------------------------------- |
 | 0–20   | Low      | Green indicator, proceed                  |
 | 21–50  | Elevated | Soft warning                              |
-| 51–75  | High     | Strong warning, require explicit confirm  |
-| 76–100 | Critical | Recommend abort, explain why              |
+| 51–75  | High     | Strong warning, checkbox enables proceed  |
+| 76–100 | Critical | Recommend abort, type `CRITICAL` to proceed |
 
 ## Why Freighter First
 
 Stellar has no universal injected wallet provider — each wallet exposes its own signing API, so interception is per-wallet, not global. Gryd Lock targets **Freighter** first (the most widely used browser wallet), proves the interception pattern, then generalises to xBull, Albedo, and Lobstr.
+
+## Accessibility
+
+The warning popup is fully accessible to screen reader users (e.g., VoiceOver, NVDA). It implements the `alertdialog` ARIA role and uses an `assertive` live region to ensure the risk tier is announced immediately upon opening. The popup wires the risk level, destination, and warning message together using `aria-describedby` so the complete context is conveyed coherently without relying on visual cues.
 
 ## Tech Stack
 
@@ -68,14 +74,25 @@ grydlock-extension/
 │   ├── adapter/                # Oracle adapter stub — getScore(destination)
 │   ├── background/             # Service worker: decodes XDR, scores, opens the warning popup
 │   ├── decode/                  # XDR → destination extraction (Stellar SDK)
-│   ├── intercept/                # Freighter signTransaction proxy + message-bridge protocol
-│   ├── lib/                       # Score → tier mapping
-│   └── popup/                      # React warning UI — default (dev) and intercept modes
-├── docs/
-│   └── adr/                       # Architecture decision records and proposal template
-├── CONTRIBUTING.md                # Contributor workflow, test expectations, PR/ADR process
+│   ├── history/                  # Decision history page (extension options page)
+│   ├── intercept/                 # Freighter signTransaction proxy + message-bridge protocol
+│   ├── lib/                        # Score → tier mapping, local decision history storage
+│   └── popup/                       # React warning UI — default (dev) and intercept modes
 └── README.md
 ```
+
+## Decision History
+
+Every proceed/cancel decision made in the warning popup is recorded locally: destination,
+asset (when present), score, tier, decision, and timestamp. Open it via the extension's
+**Options** page (right-click the toolbar icon → Options, or `chrome://extensions` → Gryd Lock →
+Details → Extension options).
+
+Privacy:
+
+- History lives only in `chrome.storage.local` on your device — it is never transmitted anywhere.
+- Storage is capped to the most recent 200 decisions; older entries are dropped automatically.
+- A **Clear history** button on the page deletes everything at once.
 
 ## How the Pieces Connect
 
@@ -98,7 +115,7 @@ to `window`, and Freighter's own content script replies the same way. That `post
 the actual interception point:
 
 ```
-dApp posts { source: FREIGHTER_EXTERNAL_MSG_REQUEST, type: SUBMIT_TRANSACTION, transactionXdr }
+dApp posts { source: FREIGHTER_EXTERNAL_MSG_REQUEST, type: SUBMIT_TRANSACTION, transactionXdr, networkPassphrase }
         │
         ▼
 src/intercept/mainWorldEntry.ts   (MAIN world; grabs the request via stopImmediatePropagation()
@@ -111,14 +128,14 @@ src/intercept/bridgeEntry.ts      (isolated world; only place with chrome.* API 
 src/background/background.ts      (service worker)
         │
         ├─▶ src/decode/decodeTransaction.ts → extractDestination(xdr)
-        │      no single destination? → outcome 'allow', nothing shown, request passes through
+        │      returns all distinct destinations, not just one
         │
-        ├─▶ src/adapter/oracleAdapter.ts → getScore(destination)
+        ├─▶ each destination scored independently via src/adapter/oracleAdapter.ts
         │
-        └─▶ chrome.windows.create(popup?mode=intercept&requestId&destination&score)
+        └─▶ worst-tier destination opens the popup with all destinations
                    │
                    ▼
-             src/popup/App.tsx (intercept mode) renders the tier + destination + Proceed/Cancel
+             src/popup/App.tsx (intercept mode) renders tier + worst-score + every destination
                    │  chrome.runtime.sendMessage({ type: 'DECISION_MADE', ... })
                    ▼
         background resolves the pending request → bridge → mainWorld
@@ -140,17 +157,41 @@ src/background/background.ts      (service worker)
   extension via `chrome.runtime`. Decoding and scoring happen in the background worker rather than
   in `mainWorldEntry.ts` so the Stellar SDK ships once per browser session instead of being
   injected into every page (`mainWorld.js` is ~2&nbsp;KB; the SDK lives in `background.js` instead).
+- **Keyboard-first approval**: the warning is an approval dialog for a signing request, so it is
+  fully operable without a mouse. `src/popup/TierWarning.tsx` renders as a modal dialog
+  (`role="dialog"`, `aria-modal`, labelled by the tier heading) and:
+  - focuses **Cancel** on open for every tier — the safe choice is always one keypress away, and a
+    High/Critical warning never makes you hunt for focus;
+  - traps focus in the popup — Tab and Shift+Tab cycle through its interactive elements and wrap at
+    the ends, so focus can't land on browser or extension UI while a decision is pending;
+  - treats **Escape** as Cancel, routed through the same `onCancel` path as the button, so an
+    intercepted request declines identically however it was dismissed;
+  - leaves Enter/Space activation to native `<button>` behaviour rather than re-implementing it.
 - **Pure logic**: `src/intercept/resolveOutcome.ts` is the testable core — given a decode function,
   a score function, and a decision function, it returns `'allow' | 'proceed' | 'cancel'` with no
   Chrome APIs involved, so it's covered by ordinary Vitest unit tests.
-- **Graceful degradation**: transactions with no single determinable destination (malformed XDR, no
+- **Graceful degradation & timeouts**: transactions with no single determinable destination (malformed XDR, no
   destination-bearing operation, or multiple distinct destinations) resolve to `'allow'` — Gryd Lock
   never blocks what it can't assess.
+- **Destination-bearing operations**: `payment`, `pathPaymentStrictSend`/`pathPaymentStrictReceive`,
+  `createAccount`, `createClaimableBalance`, and `claimClaimableBalance`. A `createClaimableBalance`
+  contributes one candidate destination per claimant, since any of them may later claim it; a
+  transaction with more than one claimant is a multiple-distinct-destination case and resolves to
+  `'allow'` like any other batch, pending the dedicated multi-destination scoring in #20.
+  `claimClaimableBalance` carries no destination account in the operation itself — only an opaque
+  balance ID — so the balance ID is scored in its place.
 - **Tests**: `src/decode/decodeTransaction.test.ts` and `src/intercept/resolveOutcome.test.ts` cover
   the decode/scoring/decision logic directly; `src/adapter/oracleAdapter.test.ts` and
   `src/lib/tiers.test.ts` cover the adapter stub and tier mapping; `src/popup/App.test.tsx` covers
   both the popup's default (loading/error/retry/dev-slider) and intercept-mode rendering, against a
-  mocked adapter and a stubbed `chrome.runtime`.
+  mocked adapter and a stubbed `chrome.runtime`, including the theme-aware tier accent variables
+  used by the popup.
+
+## Security
+
+Report suspected vulnerabilities privately using [SECURITY.md](SECURITY.md). The
+[threat model](docs/threat-model.md) documents the extension's trust boundaries, current
+guarantees, explicit non-goals, known gaps, and security-hardening roadmap.
 
 ## Develop
 
@@ -160,18 +201,39 @@ src/background/background.ts      (service worker)
 3. Go to `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, select the `dist/` output.
 4. Open the popup from the toolbar to exercise the dev/testing flow — the score comes from the
    adapter stub, and in dev builds the dev control lets you drag through all four tiers. To exercise
-   real interception, visit a page with Freighter installed and call `signTransaction`.
+   real interception, visit a page with Freighter installed and call `signTransaction`. The popup
+   follows the browser or OS `prefers-color-scheme` setting in both the default preview and
+   interception flows.
 
 ## Quality Gates
 
 ```bash
-npm run lint       # ESLint
-npm run typecheck  # tsc --noEmit
-npm test           # Vitest
-npm run build      # tsc -b && vite build && node scripts/build-extension.mjs
+npm run lint           # ESLint
+npm run typecheck      # tsc --noEmit
+npm run test:coverage  # Vitest + v8 coverage (enforces thresholds)
+npm run build          # tsc -b && vite build && node scripts/build-extension.mjs
 ```
 
 All four run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull request.
+Popup visual regression snapshots run in CI as well via `npm run test:visual`; if a UI change is
+intentional, refresh baselines locally with `npx playwright test --update-snapshots` and commit the
+updated files from `tests/visual/popup.spec.ts-snapshots/`.
+
+**Coverage policy.** Thresholds are configured in `vite.config.ts` and enforced by
+`npm run test:coverage` (CI runs this instead of bare `vitest run`). The following
+files are excluded from coverage because they require Chrome APIs or a real DOM
+that unit tests cannot provide:
+
+- `src/intercept/mainWorldEntry.ts` / `src/intercept/bridgeEntry.ts` — depend on `chrome.*` APIs and `postMessage` across extension worlds; covered by the e2e harness.
+- `src/background/background.ts` — service-worker `chrome.*` calls; covered by the e2e harness.
+- `src/popup/main.tsx` — React entry-point boilerplate.
+- `src/intercept/protocol.ts` — constant and type definitions only.
+
+## Timeout Behavior for getScore
+
+`getScore` now includes a built‑in timeout to prevent the signing flow from hanging indefinitely. The default timeout is **5 seconds** and can be overridden per call via the optional `options` parameter. If the operation exceeds the timeout, the function resolves with a fallback score of `-1`, which is treated as an unknown score and results in a safe warning tier.
+
+You can configure the default timeout by modifying `src/adapter/config.ts` (`DEFAULT_GET_SCORE_TIMEOUT_MS`). Tests use a shorter timeout to verify the fallback behaviour.
 
 ## Contributing
 
@@ -187,6 +249,7 @@ contracts, interception semantics, or security boundaries should follow the ligh
 - [x] Popup renders one score across the four tiers. _(stub)_
 - [x] Fetch the score through the oracle adapter (stub score) — prove the query path end to end.
 - [x] Freighter interception: proxy `signTransaction`, decode the XDR, extract the destination, route it through the adapter.
+- [x] Local decision history: persist proceed/cancel decisions to `chrome.storage.local` (capped, on-device only) with a history page.
 - [ ] Swap the stub score for a live one from the adapter.
 - [ ] Generalise interception beyond Freighter.
 
