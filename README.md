@@ -130,6 +130,8 @@ src/background/background.ts      (service worker)
         │
         ├─▶ src/adapter/oracleAdapter.ts → getScore(destination)
         │
+        ├─▶ chrome.action.setBadgeText / setBadgeBackgroundColor (signals active review state with tier accent color)
+        │
         └─▶ chrome.windows.create(popup?mode=intercept&requestId&destination&score)
                    │
                    ▼

@@ -18,6 +18,10 @@ function requestDecision(
   requestId: string,
   info: { destination: string; asset?: string; score: number },
 ): Promise<Decision> {
+  const tierInfo = tierForScore(info.score)
+  chrome.action.setBadgeText({ text: '!' })
+  chrome.action.setBadgeBackgroundColor({ color: tierInfo.colour })
+
   return new Promise((resolve) => {
     pendingDecisions.set(requestId, (decision) => {
       // History stays on-device (chrome.storage.local); a write failure must
@@ -26,7 +30,7 @@ function requestDecision(
         destination: info.destination,
         asset: info.asset,
         score: info.score,
-        tier: tierForScore(info.score).tier,
+        tier: tierInfo.tier,
         decision,
         timestamp: Date.now(),
       }).catch(() => {})
@@ -72,6 +76,9 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage, _sender, sendRes
     const resolve = pendingDecisions.get(message.requestId)
     resolve?.(message.decision)
     pendingDecisions.delete(message.requestId)
+    if (pendingDecisions.size === 0) {
+      chrome.action.setBadgeText({ text: '' })
+    }
   }
 
   return undefined

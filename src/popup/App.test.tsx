@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { axe, toHaveNoViolations } from 'jest-axe'
 import App from './App'
 import * as adapter from '../adapter/oracleAdapter'
@@ -19,7 +20,7 @@ describe('App', () => {
 
   it('renders the matching tier once the adapter resolves', async () => {
     vi.spyOn(adapter, 'getScore').mockResolvedValue(85)
-    const { container } = render(<App />)
+    render(<App />)
     expect(await screen.findByText(/critical risk/i)).toBeInTheDocument()
     expect(screen.getByText('Score: 85')).toBeInTheDocument()
     expect(screen.getByText(/critical risk/i).closest('.popup')).toHaveAttribute('data-tier', 'critical')

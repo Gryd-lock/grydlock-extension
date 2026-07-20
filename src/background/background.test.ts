@@ -4,6 +4,8 @@ import * as resolveModule from '../intercept/resolveOutcome'
 const mockAddListener = vi.fn()
 const mockGetURL = vi.fn((path: string) => `chrome-extension://test-id/${path}`)
 const mockWindowsCreate = vi.fn()
+const mockSetBadgeText = vi.fn()
+const mockSetBadgeBackgroundColor = vi.fn()
 
 const originalChrome = globalThis.chrome
 
@@ -18,6 +20,10 @@ describe('background message listener', () => {
         getURL: mockGetURL,
       },
       windows: { create: mockWindowsCreate },
+      action: {
+        setBadgeText: mockSetBadgeText,
+        setBadgeBackgroundColor: mockSetBadgeBackgroundColor,
+      },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any
   })
@@ -54,6 +60,10 @@ describe('background message listener', () => {
       })
     )
 
+    // Verify badge was set to '!' and color matching score 42 (elevated -> '#a86300')
+    expect(mockSetBadgeText).toHaveBeenCalledWith({ text: '!' })
+    expect(mockSetBadgeBackgroundColor).toHaveBeenCalledWith({ color: '#a86300' })
+
     // At this point, pendingDecisions has 'req-1'. 
     // We send a DECISION_MADE message to resolve it.
     listener({ type: 'DECISION_MADE', requestId: 'req-1', decision: 'proceed' }, {}, vi.fn())
@@ -67,6 +77,9 @@ describe('background message listener', () => {
       requestId: 'req-1',
       outcome: 'allow',
     })
+
+    // Verify badge text cleared when pending decisions are resolved
+    expect(mockSetBadgeText).toHaveBeenCalledWith({ text: '' })
 
     // Verify delete: sending another DECISION_MADE shouldn't crash or re-resolve anything
     // If pendingDecisions was not deleted, it would try to resolve a completed promise (which is safe in JS, but we want to ensure no crash)
