@@ -10,7 +10,7 @@
     "page": "src/history/index.html",
     "open_in_tab": true
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "windows"],
   "background": {
     "service_worker": "background.js"
   },
