@@ -6,8 +6,11 @@ on:
   pull_request:
 
 jobs:
-  verify:
+  ci:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser: [chromium, chrome, edge]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,7 +18,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npx playwright install ${{ matrix.browser }}
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: xvfb-run --auto-servernum npm run test:e2e

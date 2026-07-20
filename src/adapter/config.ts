@@ -1,0 +1,1 @@
+export const DEFAULT_GET_SCORE_TIMEOUT_MS = 5000;
