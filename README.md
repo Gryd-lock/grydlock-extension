@@ -187,6 +187,12 @@ src/background/background.ts      (service worker)
   mocked adapter and a stubbed `chrome.runtime`, including the theme-aware tier accent variables
   used by the popup.
 
+## Security
+
+Report suspected vulnerabilities privately using [SECURITY.md](SECURITY.md). The
+[threat model](docs/threat-model.md) documents the extension's trust boundaries, current
+guarantees, explicit non-goals, known gaps, and security-hardening roadmap.
+
 ## Develop
 
 1. `npm install`
