@@ -13,7 +13,7 @@ function buildXdr(operations: ReturnType<typeof Operation.payment>[], memo?: Mem
   const account = new Account(SOURCE, '0')
   const builder = new TransactionBuilder(account, {
     fee: '100',
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase,
   })
   for (const op of operations) builder.addOperation(op)
   if (memo) builder.addMemo(memo)

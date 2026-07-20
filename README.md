@@ -115,7 +115,7 @@ to `window`, and Freighter's own content script replies the same way. That `post
 the actual interception point:
 
 ```
-dApp posts { source: FREIGHTER_EXTERNAL_MSG_REQUEST, type: SUBMIT_TRANSACTION, transactionXdr }
+dApp posts { source: FREIGHTER_EXTERNAL_MSG_REQUEST, type: SUBMIT_TRANSACTION, transactionXdr, networkPassphrase }
         │
         ▼
 src/intercept/mainWorldEntry.ts   (MAIN world; grabs the request via stopImmediatePropagation()

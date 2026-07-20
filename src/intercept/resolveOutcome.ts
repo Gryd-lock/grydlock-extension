@@ -39,8 +39,12 @@ function tierOrder(tier: string): number {
  * destination drives the warning so a malicious entry in a larger batch
  * can't be hidden by low-risk peers.
  */
-export async function resolveOutcome(xdr: string, deps: ResolveOutcomeDeps): Promise<Outcome> {
-  const decoded = deps.extractDestination(xdr)
+export async function resolveOutcome(
+  xdr: string,
+  deps: ResolveOutcomeDeps,
+  networkPassphrase?: string,
+): Promise<Outcome> {
+  const decoded = deps.extractDestination(xdr, networkPassphrase)
   if (!decoded) return 'allow'
 
   const scores = await Promise.all(

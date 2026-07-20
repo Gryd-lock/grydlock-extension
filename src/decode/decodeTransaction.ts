@@ -17,6 +17,17 @@ function assetLabel(asset: Asset | undefined): string | undefined {
   return `${asset.getCode()}:${asset.getIssuer()}`
 }
 
+const NETWORK_MAP: Record<string, string> = {
+  PUBLIC: Networks.PUBLIC,
+  TESTNET: Networks.TESTNET,
+  FUTURENET: Networks.FUTURENET,
+  SANDBOX: Networks.SANDBOX,
+}
+
+export function resolveNetworkPassphrase(networkOrPassphrase: string = Networks.PUBLIC): string {
+  return NETWORK_MAP[networkOrPassphrase.toUpperCase()] ?? networkOrPassphrase
+}
+
 /**
  * Maps a single operation to the destination(s) it pays or transfers value
  * to. createClaimableBalance yields one candidate destination per claimant,
