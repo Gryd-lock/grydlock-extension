@@ -51,6 +51,35 @@ body {
   margin: 0 0 16px;
 }
 
+.confirmation-panel {
+  margin: 0 0 16px;
+  padding: 10px;
+  border: 1px solid #d6d6d6;
+  border-radius: 6px;
+  background: #f7f7f7;
+  font-size: 12px;
+}
+
+.confirmation-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.confirmation-check input {
+  margin-top: 2px;
+}
+
+.confirmation-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #b8b8b8;
+  border-radius: 4px;
+  font: inherit;
+}
+
 .actions {
   display: flex;
   gap: 8px;
@@ -75,6 +104,11 @@ body {
 .proceed {
   background: var(--popup-button-primary);
   color: var(--popup-button-primary-text);
+}
+
+.actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .dev-slider {

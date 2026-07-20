@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>43/43</span>
+                <span class='fraction'>51/51</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>43/43</span>
+                <span class='fraction'>51/51</span>
             </div>
         
             
@@ -116,7 +116,22 @@
 <a name='L51'></a><a href='#L51'>51</a>
 <a name='L52'></a><a href='#L52'>52</a>
 <a name='L53'></a><a href='#L53'>53</a>
-<a name='L54'></a><a href='#L54'>54</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -125,6 +140,21 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -165,16 +195,23 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">17x</span>
-<span class="cline-any cline-yes">17x</span>
-<span class="cline-any cline-yes">17x</span>
-<span class="cline-any cline-yes">17x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">export type Tier = 'low' | 'elevated' | 'high' | 'critical'
 &nbsp;
 export interface TierInfo {
   tier: Tier
   label: string
+  /** Hex colour used for visual accents (border, badge) in light mode.
+   *  All values meet WCAG 2.1 AA contrast (≥ 4.5:1) against white (#ffffff). */
   colour: string
+  /** Hex colour used for visual accents (border, badge) in dark mode.
+   *  All values meet WCAG 2.1 AA contrast (≥ 4.5:1) against the popup dark background. */
+  darkColour: string
+  /** Unicode icon that conveys tier without relying on colour alone. */
+  icon: string
   message: string
 }
 &nbsp;
@@ -184,7 +221,9 @@ const TIERS: Array&lt;{ max: number; info: TierInfo }&gt; = [
     info: {
       tier: 'low',
       label: 'Low',
-      colour: '#2e7d32',
+      colour: '#2e7d32', // 5.13:1 on white — WCAG AA ✓
+      darkColour: '#66bb6a', // 7.50:1 on #111827 — WCAG AA ✓
+      icon: '✓',
       message: 'No signs of a risky destination.',
     },
   },
@@ -193,7 +232,9 @@ const TIERS: Array&lt;{ max: number; info: TierInfo }&gt; = [
     info: {
       tier: 'elevated',
       label: 'Elevated',
-      colour: '#f9a825',
+      colour: '#a86300', // 4.72:1 on white — WCAG AA ✓  (was #f9a825 @ 1.97:1 — FAIL)
+      darkColour: '#f6ad55', // 9.32:1 on #111827 — WCAG AA ✓
+      icon: '⚠',
       message: 'Some unusual signals — double-check the destination.',
     },
   },
@@ -202,7 +243,9 @@ const TIERS: Array&lt;{ max: number; info: TierInfo }&gt; = [
     info: {
       tier: 'high',
       label: 'High',
-      colour: '#ef6c00',
+      colour: '#bf360c', // 5.60:1 on white — WCAG AA ✓  (was #ef6c00 @ 3.08:1 — FAIL)
+      darkColour: '#ff8a65', // 7.67:1 on #111827 — WCAG AA ✓
+      icon: '⚠',
       message: 'Strong indicators of risk. Confirm you trust this destination.',
     },
   },
@@ -211,7 +254,9 @@ const TIERS: Array&lt;{ max: number; info: TierInfo }&gt; = [
     info: {
       tier: 'critical',
       label: 'Critical',
-      colour: '#c62828',
+      colour: '#c62828', // 5.62:1 on white — WCAG AA ✓
+      darkColour: '#ef9a9a', // 8.24:1 on #111827 — WCAG AA ✓
+      icon: '✕',
       message: 'This destination looks fraudulent. Cancelling is strongly recommended.',
     },
   },
@@ -229,7 +274,7 @@ export function tierForScore(score: number): TierInfo {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-07-17T13:39:16.576Z
+                at 2026-07-19T11:40:21.909Z
             </div>
         <script src="../prettify.js"></script>
         <script>

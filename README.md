@@ -41,8 +41,8 @@ User proceeds or cancels — the extension never blocks
 | ------ | -------- | ----------------------------------------- |
 | 0–20   | Low      | Green indicator, proceed                  |
 | 21–50  | Elevated | Soft warning                              |
-| 51–75  | High     | Strong warning, require explicit confirm  |
-| 76–100 | Critical | Recommend abort, explain why              |
+| 51–75  | High     | Strong warning, checkbox enables proceed  |
+| 76–100 | Critical | Recommend abort, type `CRITICAL` to proceed |
 
 ## Why Freighter First
 
