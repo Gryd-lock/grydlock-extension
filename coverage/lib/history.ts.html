@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-    <title>Code coverage report for intercept/resolveOutcome.ts</title>
+    <title>Code coverage report for lib/history.ts</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="../prettify.css" />
     <link rel="stylesheet" href="../base.css" />
@@ -19,34 +19,34 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
-        <h1><a href="../index.html">All files</a> / <a href="index.html">intercept</a> resolveOutcome.ts</h1>
+        <h1><a href="../index.html">All files</a> / <a href="index.html">lib</a> history.ts</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>6/6</span>
+                <span class='fraction'>17/17</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>3/3</span>
+                <span class='fraction'>9/9</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>1/1</span>
+                <span class='fraction'>4/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>6/6</span>
+                <span class='fraction'>17/17</span>
             </div>
         
             
@@ -84,7 +84,20 @@
 <a name='L19'></a><a href='#L19'>19</a>
 <a name='L20'></a><a href='#L20'>20</a>
 <a name='L21'></a><a href='#L21'>21</a>
-<a name='L22'></a><a href='#L22'>22</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -96,35 +109,61 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import type { Decision, Outcome } from './protocol'
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import type { Decision } from '../intercept/protocol'
+import type { Tier } from './tiers'
 &nbsp;
-export interface ResolveOutcomeDeps {
-  extractDestination: (xdr: string) =&gt; { destination: string; asset?: string } | null
-  getScore: (destination: string) =&gt; Promise&lt;number&gt;
-  requestDecision: (info: { destination: string; asset?: string; score: number }) =&gt; Promise&lt;Decision&gt;
+export interface HistoryEntry {
+  destination: string
+  asset?: string
+  score: number
+  tier: Tier
+  decision: Decision
+  timestamp: number
 }
 &nbsp;
-/**
- * Decides what should happen to a pending signTransaction call: 'allow' when
- * no single destination can be determined (nothing to warn about — Gryd Lock
- * never blocks what it can't assess), otherwise scores the destination and
- * defers to the user's proceed/cancel decision.
- */
-export async function resolveOutcome(xdr: string, deps: ResolveOutcomeDeps): Promise&lt;Outcome&gt; {
-  const decoded = deps.extractDestination(xdr)
-  if (!decoded) return 'allow'
+export const HISTORY_KEY = 'decisionHistory'
+export const HISTORY_LIMIT = 200
 &nbsp;
-  const score = await deps.getScore(decoded.destination)
-  return deps.requestDecision({ destination: decoded.destination, asset: decoded.asset, score })
+/** Prepends an entry, keeping the newest HISTORY_LIMIT entries. */
+export function appendEntry(entries: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
+  return [entry, ...entries].slice(0, HISTORY_LIMIT)
+}
+&nbsp;
+export async function readHistory(): Promise&lt;HistoryEntry[]&gt; {
+  const stored = await chrome.storage.local.get(HISTORY_KEY)
+  const entries = stored[HISTORY_KEY]
+  return Array.isArray(entries) ? entries : []
+}
+&nbsp;
+export async function recordDecision(entry: HistoryEntry): Promise&lt;void&gt; {
+  const entries = await readHistory()
+  await chrome.storage.local.set({ [HISTORY_KEY]: appendEntry(entries, entry) })
+}
+&nbsp;
+export async function clearHistory(): Promise&lt;void&gt; {
+  await chrome.storage.local.remove(HISTORY_KEY)
 }
 &nbsp;</pre></td></tr></table></pre>
 
