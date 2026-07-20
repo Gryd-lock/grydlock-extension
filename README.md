@@ -137,6 +137,8 @@ src/background/background.ts      (service worker)
                    ▼
              src/popup/App.tsx (intercept mode) renders tier + worst-score + every destination
                    │  chrome.runtime.sendMessage({ type: 'DECISION_MADE', ... })
+                   │  (popup closed any other way → chrome.windows.onRemoved fires instead,
+                   │   background resolves that request to 'cancel' so it can't hang forever)
                    ▼
         background resolves the pending request → bridge → mainWorld
                    │
