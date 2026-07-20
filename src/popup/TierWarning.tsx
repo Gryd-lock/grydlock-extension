@@ -168,11 +168,8 @@ export default function TierWarning({
         } as CSSProperties
       }
     >
-      {/* Icon paired with label so tier is never conveyed by colour alone (WCAG 1.4.1) */}
       <h1 id="tier-warning-title" aria-live="assertive">
-        <span className="tier-icon" aria-hidden="true">
-          {tier.icon}
-        </span>{' '}
+        <span className="tier-icon" aria-hidden="true">{tier.icon}</span>{' '}
         {tier.label} risk
       </h1>
       {destination && <p className="destination">{destination}</p>}
@@ -221,5 +218,21 @@ export default function TierWarning({
       </div>
       {devControl}
     </div>
-  )
+  );
+}
+
+// Helper to find focusable elements inside a container
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function focusableWithin(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (el) => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true'
+  );
 }
