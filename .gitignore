@@ -1,3 +1,5 @@
 node_modules/
 dist/
 *.tsbuildinfo
+test-results/
+tests/visual/popup.spec.ts-snapshots/*-chromium-darwin.png

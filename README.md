@@ -207,6 +207,9 @@ npm run build          # tsc -b && vite build && node scripts/build-extension.mj
 ```
 
 All four run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull request.
+Popup visual regression snapshots run in CI as well via `npm run test:visual`; if a UI change is
+intentional, refresh baselines locally with `npx playwright test --update-snapshots` and commit the
+updated files from `tests/visual/popup.spec.ts-snapshots/`.
 
 **Coverage policy.** Thresholds are configured in `vite.config.ts` and enforced by
 `npm run test:coverage` (CI runs this instead of bare `vitest run`). The following

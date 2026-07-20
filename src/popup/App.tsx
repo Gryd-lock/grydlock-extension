@@ -7,15 +7,67 @@ import type { RuntimeDecisionMadeMessage } from '../intercept/protocol'
 import './App.css'
 
 const PLACEHOLDER_DESTINATION = 'GABCDEXAMPLE0000000000000000000000000000000000000000000'
+const PREVIEW_DESTINATION = 'GDRWZV7XVISUALREGRESSIONDESTINATION0000000000000000000'
 
 type LoadState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; score: number }
+type PreviewState =
+  | 'loading'
+  | 'error'
+  | 'low'
+  | 'elevated'
+  | 'high'
+  | 'critical'
+  | 'dev-slider'
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
+  const preview = params.get('preview') as PreviewState | null
+  if (preview) {
+    return <PreviewView preview={preview} />
+  }
   if (params.get('mode') === 'intercept') {
     return <InterceptView params={params} />
   }
   return <DevPreview />
+}
+
+function PreviewView({ preview }: { preview: PreviewState }) {
+  if (preview === 'loading') {
+    return <div className="popup">Checking destination…</div>
+  }
+
+  if (preview === 'error') {
+    return (
+      <div className="popup">
+        <p className="message">Could not reach the risk oracle.</p>
+        <button className="proceed" type="button">
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  const previewScores = {
+    low: 10,
+    elevated: 35,
+    high: 60,
+    critical: 85,
+  } as const
+  const score = preview === 'dev-slider' ? 35 : previewScores[preview]
+  const tier = tierForScore(score)
+
+  return (
+    <TierWarning
+      tier={tier}
+      score={score}
+      destination={PREVIEW_DESTINATION}
+      onCancel={() => {}}
+      onProceed={() => {}}
+      devControl={
+        preview === 'dev-slider' ? <DevScoreSlider score={score} onChange={() => {}} /> : undefined
+      }
+    />
+  )
 }
 
 function InterceptView({ params }: { params: URLSearchParams }) {
