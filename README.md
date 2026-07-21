@@ -264,6 +264,12 @@ Popup visual regression snapshots run in CI as well via `npm run test:visual`; i
 intentional, refresh baselines locally with `npx playwright test --update-snapshots` and commit the
 updated files from `tests/visual/popup.spec.ts-snapshots/`.
 
+**Content Security Policy.** `manifest.json` declares `content_security_policy.extension_pages`
+as `script-src 'self'; object-src 'self'`. The Vite build emits no inline scripts or styles for
+the popup or history pages — all scripts are bundled into separate `.js` files referenced by
+`<script src="...">` tags — so both popup modes (dev and intercept) load cleanly under this CSP
+with no console violations.
+
 **Coverage policy.** Thresholds are configured in `vite.config.ts` and enforced by
 `npm run test:coverage` (CI runs this instead of bare `vitest run`). The following
 files are excluded from coverage because they require Chrome APIs or a real DOM
