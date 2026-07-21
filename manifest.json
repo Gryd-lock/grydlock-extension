@@ -35,6 +35,12 @@
     },
     {
       "matches": ["<all_urls>"],
+      "js": ["albedoMainWorld.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["<all_urls>"],
       "js": ["bridge.js"],
       "run_at": "document_start"
     }

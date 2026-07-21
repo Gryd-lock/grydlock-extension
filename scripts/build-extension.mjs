@@ -3,12 +3,14 @@ import { stat, appendFile } from 'node:fs/promises'
 
 const entries = [
   { entry: 'src/intercept/mainWorldEntry.ts', outfile: 'dist/mainWorld.js' },
+  { entry: 'src/intercept/albedoMainWorldEntry.ts', outfile: 'dist/albedoMainWorld.js' },
   { entry: 'src/intercept/bridgeEntry.ts', outfile: 'dist/bridge.js' },
   { entry: 'src/background/background.ts', outfile: 'dist/background.js' },
 ]
 
 const sizeBudgets = [
   { outfile: 'dist/mainWorld.js', budgetBytes: 5 * 1024, label: 'mainWorld.js' },
+  { outfile: 'dist/albedoMainWorld.js', budgetBytes: 5 * 1024, label: 'albedoMainWorld.js' },
   { outfile: 'dist/bridge.js', budgetBytes: 3 * 1024, label: 'bridge.js' },
 ]
 
