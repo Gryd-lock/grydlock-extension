@@ -33,6 +33,7 @@ export default defineConfig({
         'src/popup/main.tsx',
         'src/intercept/protocol.ts',
         'src/intercept/mainWorldEntry.ts',
+        'src/intercept/albedoMainWorldEntry.ts',
         'src/intercept/bridgeEntry.ts',
         'src/background/background.ts',
       ],

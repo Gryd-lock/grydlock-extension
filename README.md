@@ -14,7 +14,7 @@ This is the product. It runs entirely in the user's browser. It hooks the wallet
 
 For detailed information on data handling, data protection, and our no-telemetry architecture, see [PRIVACY.md](file:///c:/Users/USER/grydlock-extension/PRIVACY.md).
 
-> **Status:** Early build. A Freighter `signTransaction` proxy decodes the destination, routes it through the oracle adapter, and shows the warning before signing. A live oracle connection is **not yet built** — see the roadmap.
+> **Status:** Early build. A Freighter `signTransaction` proxy decodes the destination, routes it through the oracle adapter, and shows the warning before signing. An Albedo adapter intercepts the `window.open` popup flow. A live oracle connection is **not yet built** — see the roadmap.
 
 ## What it does
 
@@ -50,6 +50,46 @@ User proceeds or cancels — the extension never blocks
 
 Stellar has no universal injected wallet provider — each wallet exposes its own signing API, so interception is per-wallet, not global. Gryd Lock targets **Freighter** first (the most widely used browser wallet), proves the interception pattern, then generalises to xBull, Albedo, and Lobstr.
 
+## Albedo Interception
+
+Albedo is a web-based signer at `albedo.link` — it has no browser extension of its own that Gryd Lock can hook. Instead, the `@albedo-link/intent` npm library (used by dApps) opens a cross-origin popup via `window.open('https://albedo.link/confirm', 'auth.albedo.link', ...)` and communicates with it using `postMessage`.
+
+**Interception strategy** (`src/intercept/albedoMainWorldEntry.ts`, MAIN world):
+
+```
+dApp calls albedo.tx({ xdr, network }) via @albedo-link/intent
+        │
+        ▼
+albedo-intent calls window.open('https://albedo.link/confirm', 'auth.albedo.link', ...)
+        │
+        ▼
+albedoMainWorldEntry.ts monkey-patches window.open at document_start
+  └─▶ detects target === 'auth.albedo.link'
+  └─▶ opens the real Albedo popup
+  └─▶ returns a Proxy wrapping the real popup window
+        │
+        ▼
+albedo-intent calls proxy.postMessage({ intent: 'tx', xdr, network, __reqid, ... })
+        │
+        ▼
+Proxy intercepts first postMessage for 'tx' / 'pay' intents with an xdr field
+  └─▶ routes xdr through GRYDLOCK_REQUEST_OUTCOME → bridge → background (same path as Freighter)
+  └─▶ background decodes XDR, scores destinations, opens warning popup
+        │
+        ▼
+'cancel'            → real popup closed; synthetic albedoIntentResult error posted back
+                       to the dApp (code -4, matching Albedo's standard rejection shape)
+'allow' / 'proceed' → original postMessage forwarded to the real Albedo popup; user signs
+                       in Albedo normally
+```
+
+**What is not intercepted:**
+- **Implicit-flow intents** — these bypass the popup (they send directly via an iframe/session token established earlier). The XDR is not visible at the `window.open` layer.
+- **Non-XDR intents** (`public_key`, `sign_message`, `trust`, `exchange`) — no transaction destination to score; passed through unmodified.
+- **SEP-0007 link handler** (Albedo browser extension variant) — uses a page redirect rather than a popup; different surface not covered by this adapter.
+
+**Manual verification:** Load a dApp that calls `albedo.tx({ xdr: '...', network: 'testnet' })`, open the extension's dev popup first to confirm the bridge is alive, then trigger the Albedo signing flow. The Gryd Lock warning should appear before the Albedo confirmation dialog receives the intent payload.
+
 ## Accessibility
 
 The warning popup is fully accessible to screen reader users (e.g., VoiceOver, NVDA). It implements the `alertdialog` ARIA role and uses an `assertive` live region to ensure the risk tier is announced immediately upon opening. The popup wires the risk level, destination, and warning message together using `aria-describedby` so the complete context is conveyed coherently without relying on visual cues.
@@ -69,13 +109,13 @@ The risk score itself is fetched through [`grydlock-oracle-adapter`](../grydlock
 grydlock-extension/
 ├── manifest.json             # MV3 — popup, background service worker, content scripts
 ├── scripts/
-│   └── build-extension.mjs   # esbuild bundle for background.js / mainWorld.js / bridge.js
+│   └── build-extension.mjs   # esbuild bundle for background.js / mainWorld.js / albedoMainWorld.js / bridge.js
 ├── src/
 │   ├── adapter/                # Oracle adapter stub — getScore(destination)
 │   ├── background/             # Service worker: decodes XDR, scores, opens the warning popup
 │   ├── decode/                  # XDR → destination extraction (Stellar SDK)
 │   ├── history/                  # Decision history page (extension options page)
-│   ├── intercept/                 # Freighter signTransaction proxy + message-bridge protocol
+│   ├── intercept/                 # Freighter + Albedo proxies + message-bridge protocol
 │   ├── lib/                        # Score → tier mapping, local decision history storage
 │   └── popup/                       # React warning UI — default (dev) and intercept modes
 └── README.md
@@ -230,6 +270,7 @@ files are excluded from coverage because they require Chrome APIs or a real DOM
 that unit tests cannot provide:
 
 - `src/intercept/mainWorldEntry.ts` / `src/intercept/bridgeEntry.ts` — depend on `chrome.*` APIs and `postMessage` across extension worlds; covered by the e2e harness.
+- `src/intercept/albedoMainWorldEntry.ts` — monkey-patches `window.open` in the MAIN world; covered by the e2e harness. Pure behavioural logic is unit-tested in `albedoMainWorldEntry.test.ts`.
 - `src/background/background.ts` — service-worker `chrome.*` calls; covered by the e2e harness.
 - `src/popup/main.tsx` — React entry-point boilerplate.
 - `src/intercept/protocol.ts` — constant and type definitions only.
@@ -255,8 +296,9 @@ contracts, interception semantics, or security boundaries should follow the ligh
 - [x] Fetch the score through the oracle adapter (stub score) — prove the query path end to end.
 - [x] Freighter interception: proxy `signTransaction`, decode the XDR, extract the destination, route it through the adapter.
 - [x] Local decision history: persist proceed/cancel decisions to `chrome.storage.local` (capped, on-device only) with a history page.
+- [x] Albedo interception: monkey-patch `window.open` to intercept the `auth.albedo.link` popup, proxy the first `tx`/`pay` postMessage through the scoring pipeline before it reaches Albedo.
 - [ ] Swap the stub score for a live one from the adapter.
-- [ ] Generalise interception beyond Freighter.
+- [ ] Generalise interception beyond Freighter and Albedo (xBull, Lobstr).
 
 > **Do not build real interception until the adapter returns a real score.** Interception without a working score source is a warning with nothing to warn about.
 
