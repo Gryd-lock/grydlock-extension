@@ -225,25 +225,12 @@ Popup visual regression snapshots run in CI as well via `npm run test:visual`; i
 intentional, refresh baselines locally with `npx playwright test --update-snapshots` and commit the
 updated files from `tests/visual/popup.spec.ts-snapshots/`.
 
-**Manifest validation.** `npm run validate:manifest` runs `scripts/validate-manifest.mjs`, which
-checks `manifest.json` against Chrome Web Store / MV3 policy requirements:
-
-- `manifest_version` is 3
-- Required fields (`name`, `version`, `description`) are present and non-empty
-- `version` uses the CWS dotted-numeric format (1–4 integers, each 0–65535)
-- `icons` field is present with all required sizes (16, 32, 48, 128) and each
-  file exists on disk as a valid PNG
-- `background.service_worker` is declared (MV3 requirement)
-- `content_security_policy.extension_pages` contains no `unsafe-inline` or
-  `unsafe-eval` directives
-- Broad `host_permissions` patterns (`<all_urls>`) emit a warning that the CWS
-  will flag the listing for manual review
-
 **Content Security Policy.** `manifest.json` declares `content_security_policy.extension_pages`
 as `script-src 'self'; object-src 'self'`. The Vite build emits no inline scripts or styles for
 the popup or history pages — all scripts are bundled into separate `.js` files referenced by
 `<script src="...">` tags — so both popup modes (dev and intercept) load cleanly under this CSP
 with no console violations.
+
 **Coverage policy.** Thresholds are configured in `vite.config.ts` and enforced by
 `npm run test:coverage` (CI runs this instead of bare `vitest run`). The following
 files are excluded from coverage because they require Chrome APIs or a real DOM
