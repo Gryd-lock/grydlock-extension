@@ -213,13 +213,14 @@ guarantees, explicit non-goals, known gaps, and security-hardening roadmap.
 ## Quality Gates
 
 ```bash
-npm run lint           # ESLint
-npm run typecheck      # tsc --noEmit
-npm run test:coverage  # Vitest + v8 coverage (enforces thresholds)
-npm run build          # tsc -b && vite build && node scripts/build-extension.mjs
+npm run lint              # ESLint
+npm run typecheck         # tsc --noEmit
+npm run test:coverage     # Vitest + v8 coverage (enforces thresholds)
+npm run validate:manifest # MV3 / Chrome Web Store policy checks
+npm run build             # tsc -b && vite build && node scripts/build-extension.mjs
 ```
 
-All four run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull request.
+All five run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull request.
 Popup visual regression snapshots run in CI as well via `npm run test:visual`; if a UI change is
 intentional, refresh baselines locally with `npx playwright test --update-snapshots` and commit the
 updated files from `tests/visual/popup.spec.ts-snapshots/`.
