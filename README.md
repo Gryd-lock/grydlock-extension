@@ -238,6 +238,8 @@ Report suspected vulnerabilities privately using [SECURITY.md](SECURITY.md). The
 [threat model](docs/threat-model.md) documents the extension's trust boundaries, current
 guarantees, explicit non-goals, known gaps, and security-hardening roadmap.
 
+`manifest.json` requests `host_permissions: ["<all_urls>"]` and matches `<all_urls>` for its `document_start` content scripts. [docs/permissions.md](docs/permissions.md) documents why, the narrower alternatives considered (`activeTab` + `optional_host_permissions`), and why they were deferred.
+
 ## Develop
 
 1. `npm install`
