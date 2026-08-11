@@ -26,8 +26,8 @@ describe('resolveOutcome', () => {
     const outcome = await resolveOutcome('some-xdr', {
       extractDestination: () => ({
         destinations: [
-          { destination: 'GLOW', asset: 'USD:GISS', score: 10 },
-          { destination: 'GHIGH', asset: undefined, score: 90 },
+          { destination: 'GLOW', asset: 'USD:GISS' },
+          { destination: 'GHIGH', asset: undefined },
         ],
       }),
       getScore,
@@ -51,7 +51,7 @@ describe('resolveOutcome', () => {
 
   it('returns cancel when the user cancels', async () => {
     const outcome = await resolveOutcome('some-xdr', {
-      extractDestination: () => ({ destinations: [{ destination: 'GONE', score: 20 }] }),
+      extractDestination: () => ({ destinations: [{ destination: 'GONE' }] }),
       getScore: async () => 20,
       requestDecision: async () => 'cancel',
     })
@@ -60,20 +60,20 @@ describe('resolveOutcome', () => {
   })
 
   describe('oracle failure', () => {
-    it('calls requestDecision with score=null when getScore rejects', async () => {
+    it('calls requestDecision with fallback score -1 when getScore rejects', async () => {
       const requestDecision = vi.fn().mockResolvedValue('cancel')
 
       await resolveOutcome('some-xdr', {
-        extractDestination: () => ({ destination: 'GDEST', asset: 'USD:GISSUER' }),
+        extractDestination: () => ({ destinations: [{ destination: 'GDEST', asset: 'USD:GISSUER' }] }),
         getScore: vi.fn().mockRejectedValue(new Error('network timeout')),
         requestDecision,
       })
 
-      // Must reach requestDecision (not hang or throw) and pass null score
+      // Must reach requestDecision (not hang or throw) and pass fallback score.
       expect(requestDecision).toHaveBeenCalledWith({
-        destination: 'GDEST',
-        asset: 'USD:GISSUER',
-        score: null,
+        destinations: [{ destination: 'GDEST', asset: 'USD:GISSUER' }],
+        scores: [{ destination: 'GDEST', asset: 'USD:GISSUER', score: -1 }],
+        worstScore: -1,
       })
     })
 
@@ -81,7 +81,7 @@ describe('resolveOutcome', () => {
       const requestDecision = vi.fn().mockResolvedValue('cancel')
 
       const outcome = await resolveOutcome('some-xdr', {
-        extractDestination: () => ({ destination: 'GDEST' }),
+        extractDestination: () => ({ destinations: [{ destination: 'GDEST' }] }),
         getScore: vi.fn().mockRejectedValue(new Error('oracle down')),
         requestDecision,
       })
@@ -93,7 +93,7 @@ describe('resolveOutcome', () => {
 
     it('propagates the user proceed decision even when oracle failed', async () => {
       const outcome = await resolveOutcome('some-xdr', {
-        extractDestination: () => ({ destination: 'GDEST' }),
+        extractDestination: () => ({ destinations: [{ destination: 'GDEST' }] }),
         getScore: vi.fn().mockRejectedValue(new Error('oracle down')),
         requestDecision: async () => 'proceed',
       })
@@ -103,7 +103,7 @@ describe('resolveOutcome', () => {
 
     it('propagates the user cancel decision when oracle failed', async () => {
       const outcome = await resolveOutcome('some-xdr', {
-        extractDestination: () => ({ destination: 'GDEST' }),
+        extractDestination: () => ({ destinations: [{ destination: 'GDEST' }] }),
         getScore: vi.fn().mockRejectedValue(new Error('oracle down')),
         requestDecision: async () => 'cancel',
       })
@@ -112,4 +112,3 @@ describe('resolveOutcome', () => {
     })
   })
 })
-
