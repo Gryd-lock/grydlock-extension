@@ -23,7 +23,7 @@ interface FreighterSubmitTransactionRequest {
 }
 
 function requestOutcome(xdr: string, networkPassphrase?: string): Promise<Outcome> {
-  const requestId = crypto.randomUUID()
+  const localId = crypto.randomUUID()
 
   return new Promise((resolve) => {
     function onMessage(event: MessageEvent) {
@@ -35,7 +35,7 @@ function requestOutcome(xdr: string, networkPassphrase?: string): Promise<Outcom
       resolve(outcome === 'proceed' || outcome === 'allow' ? outcome : 'cancel')
     }
     window.addEventListener('message', onMessage)
-    window.postMessage({ type: WINDOW_REQUEST_TYPE, requestId, xdr, networkPassphrase }, '*')
+    window.postMessage({ type: WINDOW_REQUEST_TYPE, localId, xdr, networkPassphrase }, '*')
   })
 }
 
@@ -73,7 +73,7 @@ window.addEventListener(
         window.postMessage(
           {
             source: FREIGHTER_RESPONSE_SOURCE,
-            messagedId: request.messageId,
+            messageId: request.messageId,
             signedTransaction: '',
             signerAddress: '',
             apiError: {
