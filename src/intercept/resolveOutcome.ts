@@ -1,8 +1,8 @@
-import type { Decision, Outcome, RuntimeDecisionMadeMessage } from './protocol'
+import type { Decision, Outcome } from './protocol'
 import type { DecodedBatch, DecodedDestination } from '../decode/decodeTransaction'
 
 export interface ResolveOutcomeDeps {
-  extractDestination: (xdr: string) => DecodedBatch | null
+  extractDestination: (xdr: string, networkPassphrase?: string) => DecodedBatch | null
   getScore: (destination: string) => Promise<number>
   requestDecision: (info: {
     destinations: DecodedDestination[]
@@ -49,7 +49,7 @@ export async function resolveOutcome(
 
   const scores = await Promise.all(
     decoded.destinations.map(async ({ destination, asset }) => {
-      const score = await deps.getScore(destination)
+      const score = await deps.getScore(destination).catch(() => -1)
       return { destination, asset, score }
     }),
   )
