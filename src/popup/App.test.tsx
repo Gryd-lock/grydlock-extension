@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import userEvent from '@testing-library/user-event';
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe, toHaveNoViolations } from 'jest-axe'
@@ -89,6 +88,27 @@ describe('App', () => {
     expect(proceedButton).toBeDisabled()
     fireEvent.change(input, { target: { value: 'critical' } })
     expect(proceedButton).toBeEnabled()
+  })
+
+  it('renders loading preview mode without calling the adapter', () => {
+    const getScoreSpy = vi.spyOn(adapter, 'getScore')
+    window.history.pushState(null, '', '?preview=loading')
+    render(<App />)
+    expect(screen.getByText(/checking destination/i)).toBeInTheDocument()
+    expect(getScoreSpy).not.toHaveBeenCalled()
+  })
+
+  it('renders error preview mode', () => {
+    window.history.pushState(null, '', '?preview=error')
+    render(<App />)
+    expect(screen.getByText(/could not reach the risk oracle/i)).toBeInTheDocument()
+  })
+
+  it('renders dev-slider preview controls', () => {
+    window.history.pushState(null, '', '?preview=dev-slider')
+    render(<App />)
+    expect(screen.getByText(/elevated risk/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/dev: override score/i)).toBeInTheDocument()
   })
 })
 
@@ -205,5 +225,15 @@ describe('App in intercept mode', () => {
     window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=85')
     render(<App />)
     expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
+  })
+
+  it('falls back to an empty destination list when destinations JSON is malformed', () => {
+    window.history.pushState(
+      null,
+      '',
+      '?mode=intercept&requestId=req-1&destinations=%7Bbad-json&score=10',
+    )
+    render(<App />)
+    expect(screen.getByText(/low risk/i)).toBeInTheDocument()
   })
 })
