@@ -70,6 +70,7 @@ export const UNSCORED_TIER_INFO: TierInfo = {
   tier: 'unscored',
   label: 'Unknown',
   colour: '#5c6bc0', // indigo — distinct from all scored-tier colours
+  darkColour: '#9fa8da',
   icon: '?',
   message: "Couldn't reach the risk oracle. Proceed only if you fully trust this destination.",
 }
