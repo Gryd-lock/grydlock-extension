@@ -35,7 +35,7 @@ function focusableWithin(container: HTMLElement): HTMLElement[] {
 export default function TierWarning({
   tier,
   score,
-  destinations,
+  destinations = [],
   onCancel,
   onProceed,
   devControl,
@@ -62,9 +62,7 @@ export default function TierWarning({
 
   useEffect(() => {
     function handleDocumentKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key !== 'Tab' || !dialogRef.current) {
-        return
-      }
+      if (event.key !== 'Tab' || !dialogRef.current) return
 
       if (!dialogRef.current.contains(document.activeElement)) {
         event.preventDefault()
@@ -82,110 +80,10 @@ export default function TierWarning({
       return
     }
 
-    if (event.key !== 'Tab' || !dialogRef.current) {
-      return
-    }
+    if (event.key !== 'Tab' || !dialogRef.current) return
 
     const focusable = focusableWithin(dialogRef.current)
-    if (focusable.length === 0) {
-      return
-    }
-
-    const currentIndex = focusable.indexOf(document.activeElement as HTMLElement)
-    const nextIndex = event.shiftKey
-      ? currentIndex <= 0
-        ? focusable.length - 1
-        : currentIndex - 1
-      : currentIndex === -1 || currentIndex === focusable.length - 1
-        ? 0
-        : currentIndex + 1
-
-    event.preventDefault()
-    focusable[nextIndex].focus()
-  }
-
-  useEffect(() => {
-    cancelRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
-    function handleDocumentKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key !== 'Tab' || !dialogRef.current) {
-        return
-      }
-
-      if (!dialogRef.current.contains(document.activeElement)) {
-        event.preventDefault()
-        cancelRef.current?.focus()
-      }
-    }
-
-    document.addEventListener('keydown', handleDocumentKeyDown)
-    return () => document.removeEventListener('keydown', handleDocumentKeyDown)
-  }, [])
-
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'Escape') {
-      onCancel()
-      return
-    }
-
-    if (event.key !== 'Tab' || !dialogRef.current) {
-      return
-    }
-
-    const focusable = focusableWithin(dialogRef.current)
-    if (focusable.length === 0) {
-      return
-    }
-
-    const currentIndex = focusable.indexOf(document.activeElement as HTMLElement)
-    const nextIndex = event.shiftKey
-      ? currentIndex <= 0
-        ? focusable.length - 1
-        : currentIndex - 1
-      : currentIndex === -1 || currentIndex === focusable.length - 1
-        ? 0
-        : currentIndex + 1
-
-    event.preventDefault()
-    focusable[nextIndex].focus()
-  }
-
-  useEffect(() => {
-    cancelRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
-    function handleDocumentKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key !== 'Tab' || !dialogRef.current) {
-        return
-      }
-
-      if (!dialogRef.current.contains(document.activeElement)) {
-        event.preventDefault()
-        cancelRef.current?.focus()
-      }
-    }
-
-    document.addEventListener('keydown', handleDocumentKeyDown)
-    return () => document.removeEventListener('keydown', handleDocumentKeyDown)
-  }, [])
-
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'Escape') {
-      onCancel()
-      return
-    }
-
-    if (event.key !== 'Tab' || !dialogRef.current) {
-      return
-    }
-
-    const focusable = focusableWithin(dialogRef.current)
-    if (focusable.length === 0) {
-      return
-    }
+    if (focusable.length === 0) return
 
     const currentIndex = focusable.indexOf(document.activeElement as HTMLElement)
     const nextIndex = event.shiftKey
@@ -215,25 +113,29 @@ export default function TierWarning({
           '--tier-accent-dark': tier.darkColour,
         } as CSSProperties
       }
-      ref={popupRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="tier-warning-title"
-      aria-describedby={describedByIds}
     >
       <h1 id="tier-warning-title" aria-live="assertive">
-        <span className="tier-icon" aria-hidden="true">{tier.icon}</span>{' '}
+        <span className="tier-icon" aria-hidden="true">
+          {tier.icon}
+        </span>{' '}
         {tier.label} risk
       </h1>
-      {destination && <p className="destination">{destination}</p>}
-      {memo && (
-        <p className="memo">
-          <strong>Memo ({memo.type}):</strong> {memo.value}
-        </p>
+      {destinations.length === 1 && <p className="destination">{destinations[0].destination}</p>}
+      {destinations.length > 1 && (
+        <ul className="destinations" aria-label="Transaction destinations">
+          {destinations.map((item) => (
+            <li key={`${item.destination}:${item.asset ?? ''}`}>
+              {item.destination}
+              {item.asset ? ` (${item.asset})` : ''}
+              {' — '}
+              Score: {item.score}
+            </li>
+          ))}
+        </ul>
       )}
       <p className="score">Score: {score}</p>
-      {secondsLeft !== null && <p className="expires-in">Expires in {secondsLeft}s</p>}
       <p className="message">{tier.message}</p>
+      {devControl}
       {requiresHighConfirmation && (
         <label className="confirmation-panel confirmation-check" htmlFor={highConfirmId}>
           <input
@@ -269,23 +171,6 @@ export default function TierWarning({
           Proceed
         </button>
       </div>
-      {devControl}
     </div>
-  );
-}
-
-// Helper to find focusable elements inside a container
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',');
-
-function focusableWithin(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-    (el) => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true'
-  );
+  )
 }
