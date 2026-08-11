@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { getScore } from '../adapter/oracleAdapter'
-import { tierForScore, UNSCORED_TIER_INFO } from '../lib/tiers'
+import { tierForScore } from '../lib/tiers'
 import DevScoreSlider from './DevScoreSlider'
 import TierWarning from './TierWarning'
+import TrustedAddressesManager from './TrustedAddressesManager'
 import type { RuntimeDecisionMadeMessage } from '../intercept/protocol'
 import './App.css'
 
@@ -66,7 +67,7 @@ function PreviewView({ preview }: { preview: PreviewState }) {
     <TierWarning
       tier={tier}
       score={score}
-      destination={PREVIEW_DESTINATION}
+      destinations={[{ destination: PREVIEW_DESTINATION, score }]}
       onCancel={() => {}}
       onProceed={() => {}}
       devControl={
@@ -80,19 +81,15 @@ function InterceptView({ params }: { params: URLSearchParams }) {
   const requestId = params.get('requestId') ?? ''
   const destinationsJson = params.get('destinations')
   const score = Number(params.get('score') ?? '0')
-  const expiresAtParam = params.get('expiresAt')
-  const expiresAt = expiresAtParam ? Number(expiresAtParam) : undefined
   const tier = tierForScore(score)
-  
-  const memoType = params.get('memoType')
-  const memoValue = params.get('memoValue')
-  const memo = memoType && memoValue ? { type: memoType, value: memoValue } : undefined
 
   let destinations: DestinationRow[] = []
   if (destinationsJson) {
     try {
       destinations = JSON.parse(destinationsJson)
-    } catch {}
+    } catch {
+      destinations = []
+    }
   } else {
     const destination = params.get('destination') ?? ''
     const asset = params.get('asset') ?? undefined
@@ -106,15 +103,6 @@ function InterceptView({ params }: { params: URLSearchParams }) {
     chrome.runtime.sendMessage(message);
     window.close();
   }
-
-  const displayDestination =
-    kind === 'contractInvocation'
-      ? functionName
-        ? `Contract Invocation: ${functionName}() @ ${destination}`
-        : `Contract Invocation @ ${destination}`
-      : asset
-        ? `${destination} (${asset})`
-        : destination
 
   return (
     <TierWarning
