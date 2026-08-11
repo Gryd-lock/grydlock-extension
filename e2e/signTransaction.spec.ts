@@ -141,6 +141,17 @@ async function submitTransaction(page: Page, xdr: string) {
 async function makeDecision(popupPromise: Promise<Page>, label: 'Proceed' | 'Cancel') {
   const popup = await popupPromise
   await expect(popup.getByRole('heading', { name: /risk/i })).toBeVisible()
+  if (label === 'Proceed') {
+    const highConfirmation = popup.getByLabel(/strong risk signals/i)
+    if (await highConfirmation.isVisible().catch(() => false)) {
+      await highConfirmation.check()
+    }
+
+    const criticalConfirmation = popup.getByLabel(/type critical to enable proceed/i)
+    if (await criticalConfirmation.isVisible().catch(() => false)) {
+      await criticalConfirmation.fill('CRITICAL')
+    }
+  }
   await popup.getByRole('button', { name: label }).click()
 }
 
