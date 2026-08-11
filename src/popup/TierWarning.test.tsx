@@ -12,7 +12,7 @@ function renderWarning(score = 85, devControl?: React.ReactNode) {
     <TierWarning
       tier={tierForScore(score)}
       score={score}
-      destination="GDEST"
+      destinations={[{ destination: 'GDEST', score }]}
       onCancel={onCancel}
       onProceed={onProceed}
       devControl={devControl}
