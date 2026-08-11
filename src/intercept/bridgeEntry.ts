@@ -8,13 +8,14 @@ import {
 window.addEventListener('message', (event) => {
   if (event.source !== window) return
   const data = event.data as
-    | { type?: string; requestId?: string; xdr?: string; networkPassphrase?: string }
+    | { type?: string; localId?: string; requestId?: string; xdr?: string; networkPassphrase?: string }
     | undefined
-  if (data?.type !== WINDOW_REQUEST_TYPE || !data.requestId || !data.xdr) return
+  const localId = data?.localId ?? data?.requestId
+  if (data?.type !== WINDOW_REQUEST_TYPE || !localId || !data.xdr) return
 
   const message: RuntimeSignRequestMessage = {
     type: 'SIGN_REQUEST',
-    requestId,
+    requestId: localId,
     xdr: data.xdr,
     networkPassphrase: data.networkPassphrase,
   }
