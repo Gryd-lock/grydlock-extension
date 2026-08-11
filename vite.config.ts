@@ -24,7 +24,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/setupTests.ts'],
-    exclude: [...configDefaults.exclude, 'tests/visual/**'],
+    exclude: [...configDefaults.exclude, 'tests/visual/**', 'e2e/**', 'src/tests/e2e/**'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts', 'src/**/*.tsx'],
@@ -34,11 +34,13 @@ export default defineConfig({
         'src/setupTests.ts',
         'src/vite-env.d.ts',
         'src/popup/main.tsx',
+        'src/history/main.tsx',
         'src/intercept/protocol.ts',
         'src/intercept/mainWorldEntry.ts',
         'src/intercept/albedoMainWorldEntry.ts',
         'src/intercept/bridgeEntry.ts',
         'src/background/background.ts',
+        'src/tests/e2e/**',
       ],
       thresholds: {
         statements: 90,
