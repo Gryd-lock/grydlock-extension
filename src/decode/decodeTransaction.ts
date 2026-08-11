@@ -1,20 +1,19 @@
 import { Asset, FeeBumpTransaction, Networks, TransactionBuilder } from '@stellar/stellar-sdk'
-import type { OperationRecord } from '@stellar/stellar-sdk'
+import type { Memo as MemoType, OperationRecord, Transaction } from '@stellar/stellar-sdk'
 
 export interface DecodedDestination {
   destination: string
   asset?: string
+}
+
+export interface DecodedBatch {
+  destinations: DecodedDestination[]
   memo?: { type: string; value: string }
 }
 
 interface OperationDestinations {
   destinations: string[]
   asset?: string
-}
-
-function assetLabel(asset: Asset | undefined): string | undefined {
-  if (!asset || asset.isNative()) return undefined
-  return `${asset.getCode()}:${asset.getIssuer()}`
 }
 
 const NETWORK_MAP: Record<string, string> = {
@@ -24,17 +23,15 @@ const NETWORK_MAP: Record<string, string> = {
   SANDBOX: Networks.SANDBOX,
 }
 
+function assetLabel(asset: Asset | undefined): string | undefined {
+  if (!asset || asset.isNative()) return undefined
+  return `${asset.getCode()}:${asset.getIssuer()}`
+}
+
 export function resolveNetworkPassphrase(networkOrPassphrase: string = Networks.PUBLIC): string {
   return NETWORK_MAP[networkOrPassphrase.toUpperCase()] ?? networkOrPassphrase
 }
 
-/**
- * Maps a single operation to the destination(s) it pays or transfers value
- * to. createClaimableBalance yields one candidate destination per claimant,
- * since any of them may go on to claim the balance. claimClaimableBalance
- * carries no destination account in the operation itself — only an opaque
- * balance ID — so the ID is used as the scoreable identifier instead.
- */
 function destinationsFor(op: OperationRecord): OperationDestinations {
   switch (op.type) {
     case 'payment':
@@ -56,41 +53,55 @@ function destinationsFor(op: OperationRecord): OperationDestinations {
   }
 }
 
-/**
- * Extracts the single destination an unsigned transaction pays or transfers
- * value to. Returns null (never throws) when the XDR is malformed, the
- * transaction has no destination-bearing operation, or it resolves to more
- * than one distinct destination — e.g. a batch of payments to different
- * accounts, or a createClaimableBalance with multiple claimants. Callers
- * should treat null as "can't determine a single destination to score."
- */
+function memoValue(memo: MemoType): DecodedBatch['memo'] {
+  switch (memo.type) {
+    case 'text':
+      return memo.value === null ? undefined : { type: 'text', value: memo.value.toString() }
+    case 'id':
+      return memo.value === null ? undefined : { type: 'id', value: memo.value.toString() }
+    case 'hash':
+      return memo.value === null ? undefined : { type: 'hash', value: Buffer.from(memo.value).toString('hex') }
+    case 'return':
+      return memo.value === null ? undefined : { type: 'return', value: Buffer.from(memo.value).toString('hex') }
+    default:
+      return undefined
+  }
+}
+
+function mergeDestination(seen: Map<string, string | undefined>, destination: string, asset?: string) {
+  const existing = seen.get(destination)
+  if (!seen.has(destination) || (!existing && asset)) {
+    seen.set(destination, asset)
+  }
+}
+
+export function extractDecodedDestination(tx: Pick<Transaction, 'operations' | 'memo'>): DecodedBatch | null {
+  const seen = new Map<string, string | undefined>()
+
+  for (const op of tx.operations) {
+    const resolved = destinationsFor(op)
+    for (const destination of resolved.destinations) {
+      mergeDestination(seen, destination, resolved.asset)
+    }
+  }
+
+  if (seen.size === 0) return null
+
+  return {
+    destinations: Array.from(seen, ([destination, asset]) => ({ destination, asset })),
+    memo: tx.memo ? memoValue(tx.memo) : undefined,
+  }
+}
+
 export function extractDestination(
   xdr: string,
   networkPassphrase: string = Networks.TESTNET,
 ): DecodedBatch | null {
-  let parsed
   try {
-    const parsed = TransactionBuilder.fromXDR(xdr, networkPassphrase)
+    const parsed = TransactionBuilder.fromXDR(xdr, resolveNetworkPassphrase(networkPassphrase))
     const tx = parsed instanceof FeeBumpTransaction ? parsed.innerTransaction : parsed
-
-  const tx = parsed instanceof FeeBumpTransaction ? parsed.innerTransaction : parsed
-  const seen = new Map<string, string>()
-
-  for (const op of tx.operations) {
-    const resolved = destinationsFor(op)
-    if (resolved.destinations.length === 0) continue
-    for (const destination of resolved.destinations) destinations.add(destination)
-    asset = resolved.asset
-  }
-
-  if (seen.size === 0) {
+    return extractDecodedDestination(tx)
+  } catch {
     return null
-  }
-
-  return {
-    destinations: [...seen.entries()].map(([destination, asset]) => ({
-      destination,
-      asset: asset || undefined,
-    })),
   }
 }
