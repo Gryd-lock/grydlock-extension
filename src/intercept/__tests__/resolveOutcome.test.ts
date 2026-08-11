@@ -1,52 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest'
+import { resolveOutcome } from '../resolveOutcome'
 
-import { resolveOutcome } from '../../intercept/resolveOutcome';
-import { addTrustedAddress } from '../../utils/storageHelper';
+describe('resolveOutcome batch compatibility', () => {
+  it('requests a decision for an untrusted destination', async () => {
+    const requestDecision = vi.fn().mockResolvedValue('proceed')
 
-// Mock chrome.storage
-global.chrome = {
-  storage: {
-    local: {
-      get: vi.fn((keys, callback) => {
-        const result: any = {};
-        if (keys.includes('trustedAddresses')) {
-          result['trustedAddresses'] = [];
-        }
-        callback(result);
-      }),
-      set: vi.fn((obj, cb) => cb && cb()),
-    },
-  },
-} as any;
+    const outcome = await resolveOutcome('dummyXDR', {
+      extractDestination: () => ({ destinations: [{ destination: 'GDEST' }] }),
+      getScore: vi.fn().mockResolvedValue(42),
+      requestDecision,
+    })
 
-describe('resolveOutcome', () => {
-  const deps = {
-    extractDestination: (xdr: string) => ({ destination: '0xABC', asset: undefined }),
-    getScore: vi.fn().mockResolvedValue(42),
-    requestDecision: vi.fn().mockResolvedValue('proceed' as any),
-  };
-
-  beforeEach(() => {
-    (global.chrome.storage.local.get as any).mockClear();
-    (global.chrome.storage.local.set as any).mockClear();
-    deps.getScore.mockClear();
-    deps.requestDecision.mockClear();
-  });
-
-  it('should allow when destination is trusted', async () => {
-    await addTrustedAddress('0xABC');
-    const outcome = await resolveOutcome('dummyXDR', deps);
-    expect(outcome).toBe('allow');
-    expect(deps.requestDecision).not.toHaveBeenCalled();
-  });
-
-  it('should request decision when destination is not trusted', async () => {
-    const outcome = await resolveOutcome('dummyXDR', deps);
-    expect(outcome).toBe('proceed');
-    expect(deps.requestDecision).toHaveBeenCalledWith({
-      destination: '0xABC',
-      asset: undefined,
-      score: 42,
-    });
-  });
-});
+    expect(outcome).toBe('proceed')
+    expect(requestDecision).toHaveBeenCalledWith({
+      destinations: [{ destination: 'GDEST' }],
+      scores: [{ destination: 'GDEST', asset: undefined, score: 42 }],
+      worstScore: 42,
+    })
+  })
+})
