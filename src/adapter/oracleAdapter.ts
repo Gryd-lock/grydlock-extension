@@ -31,7 +31,7 @@ class ScoreCache {
     if (this.map.has(key)) this.map.delete(key);
     if (this.map.size >= this.maxSize) {
       const oldestKey = this.map.keys().next().value;
-      this.map.delete(oldestKey);
+      if (oldestKey !== undefined) this.map.delete(oldestKey);
     }
     const expiresAt = Date.now() + this.ttlMs;
     this.map.set(key, { value, expiresAt });
@@ -167,7 +167,6 @@ export async function getScore(
   options?: { timeoutMs?: number; signal?: AbortSignal; bypassCache?: boolean },
 ): Promise<number> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_GET_SCORE_TIMEOUT_MS;
-  const signal = options?.signal ?? new AbortController().signal;
   const bypassCache = options?.bypassCache ?? false;
 
   if (!bypassCache) {
@@ -197,7 +196,7 @@ export async function getScore(
     // Cache successful result
     scoreCache.set(destination, result as number);
     return result as number;
-  }, -1);
+  }, -1).catch(() => -1);
 }
 
 
