@@ -37,7 +37,11 @@ describe('background message listener', () => {
     // Intercept resolveOutcome to control when it finishes and observe requestDecision
     vi.spyOn(resolveModule, 'resolveOutcome').mockImplementation(async (_xdr, deps) => {
       // We must await it to test the round trip!
-      const decision = await deps.requestDecision({ destination: 'GDEST', score: 42 })
+      const decision = await deps.requestDecision({
+        destinations: [{ destination: 'GDEST' }],
+        scores: [{ destination: 'GDEST', score: 42 }],
+        worstScore: 42,
+      })
       return decision === 'proceed' ? 'allow' : 'cancel'
     })
 
@@ -54,11 +58,11 @@ describe('background message listener', () => {
     await flushPromises()
 
     // Verify it called chrome.windows.create with the URL
-    expect(mockWindowsCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: expect.stringContaining('mode=intercept&requestId=req-1&destination=GDEST&score=42'),
-      })
-    )
+    const popupUrl = mockWindowsCreate.mock.calls[0][0].url as string
+    expect(popupUrl).toContain('mode=intercept')
+    expect(popupUrl).toContain('requestId=req-1')
+    expect(popupUrl).toContain('destination=GDEST')
+    expect(popupUrl).toContain('score=42')
 
     // Verify badge was set to '!' and color matching score 42 (elevated -> '#a86300')
     expect(mockSetBadgeText).toHaveBeenCalledWith({ text: '!' })
