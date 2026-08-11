@@ -1,38 +1,42 @@
-/* src/utils/storageHelper.ts */
-/**
- * Helper functions for managing a trusted address allowlist using chrome.storage.
- * Uses chrome.storage.local to persist data per device.
- */
-
 export interface TrustedAddressStore {
-  trustedAddresses: string[];
+  trustedAddresses: string[]
 }
 
-const STORE_KEY = 'trustedAddresses';
+export const TRUSTED_ADDRESSES_KEY = 'trustedAddresses'
 
-// In-memory fallback store for environments where chrome.storage is mocked or unavailable.
-let fallbackTrusted: string[] = [];
+let fallbackTrusted: string[] = []
 
-/** Retrieve the list of trusted addresses. */
-
+function hasChromeStorage(): boolean {
+  return Boolean(globalThis.chrome?.storage?.local)
+}
 
 export async function getTrustedAddresses(): Promise<string[]> {
-  // Return current fallback list and then reset to avoid cross-test leakage.
-  const current = fallbackTrusted;
-  fallbackTrusted = [];
-  return current;
+  if (hasChromeStorage()) {
+    const stored = await chrome.storage.local.get(TRUSTED_ADDRESSES_KEY)
+    const addresses = stored[TRUSTED_ADDRESSES_KEY]
+    return Array.isArray(addresses) ? addresses : []
+  }
+
+  return fallbackTrusted
 }
 
 export async function addTrustedAddress(address: string): Promise<void> {
-  const current = await getTrustedAddresses();
-  if (!current.includes(address)) {
-    fallbackTrusted = [...current, address];
-    // No chrome.storage interaction needed for unit tests.
+  const current = await getTrustedAddresses()
+  if (current.includes(address)) return
+
+  const next = [...current, address]
+  if (hasChromeStorage()) {
+    await chrome.storage.local.set({ [TRUSTED_ADDRESSES_KEY]: next })
+  } else {
+    fallbackTrusted = next
   }
 }
 
 export async function removeTrustedAddress(address: string): Promise<void> {
-  const current = await getTrustedAddresses();
-  fallbackTrusted = current.filter((a) => a !== address);
-  // No chrome.storage interaction needed for unit tests.
+  const next = (await getTrustedAddresses()).filter((item) => item !== address)
+  if (hasChromeStorage()) {
+    await chrome.storage.local.set({ [TRUSTED_ADDRESSES_KEY]: next })
+  } else {
+    fallbackTrusted = next
+  }
 }
