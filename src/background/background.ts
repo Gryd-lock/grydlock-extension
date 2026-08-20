@@ -1,16 +1,10 @@
 import { getScore } from '../adapter/oracleAdapter'
 import { extractDestination } from '../decode/decodeTransaction'
 import { resolveOutcome } from '../intercept/resolveOutcome'
-import type {
-  Decision,
-  RuntimeDecisionMadeMessage,
-  RuntimeSignOutcomeMessage,
-  RuntimeSignRequestMessage,
-} from '../intercept/protocol'
+import type { Decision, RuntimeSignOutcomeMessage } from '../intercept/protocol'
 import { recordDecision } from '../lib/history'
 import { tierForScore } from '../lib/tiers'
-
-type IncomingMessage = RuntimeSignRequestMessage | RuntimeDecisionMadeMessage
+import { isRuntimeDecisionMadeMessage, isRuntimeSignRequestMessage } from './messageValidation'
 
 export const DEFAULT_TIMEOUT_MS = 60_000
 
@@ -84,8 +78,8 @@ export function requestDecision(requestId: string, info: PendingInfo): Promise<D
   })
 }
 
-chrome.runtime.onMessage.addListener((message: IncomingMessage, _sender, sendResponse) => {
-  if (message.type === 'SIGN_REQUEST') {
+chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  if (isRuntimeSignRequestMessage(message)) {
     resolveOutcome(
       message.xdr,
       {
@@ -115,7 +109,7 @@ chrome.runtime.onMessage.addListener((message: IncomingMessage, _sender, sendRes
     return true
   }
 
-  if (message.type === 'DECISION_MADE') {
+  if (isRuntimeDecisionMadeMessage(message)) {
     const resolve = pendingDecisions.get(message.requestId)
     resolve?.(message.decision)
   }
