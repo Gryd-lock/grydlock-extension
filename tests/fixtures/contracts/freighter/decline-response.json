@@ -1,0 +1,6 @@
+{
+  "source": "FREIGHTER_EXTERNAL_MSG_RESPONSE",
+  "type": "SUBMIT_TRANSACTION_RESPONSE",
+  "error": "User declined access",
+  "status": "rejected"
+}

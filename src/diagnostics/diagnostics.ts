@@ -190,7 +190,7 @@ export function recordEvent(
 
 /**
  * Rebuilds state from untrusted storage, discarding anything that does not match the
- * schema. Persisted diagnostics are attacker-writable in a compromised profile, so the
+ * poc. Persisted diagnostics are attacker-writable in a compromised profile, so the
  * loader never trusts stored keys.
  */
 export function parseState(value: unknown, now: number): DiagnosticsState {
