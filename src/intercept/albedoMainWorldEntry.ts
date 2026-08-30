@@ -48,8 +48,8 @@
  *   dApp code, so the patch is in place before albedo-intent is imported.
  */
 
-import { WINDOW_REQUEST_TYPE, WINDOW_RESPONSE_TYPE, type Outcome } from './protocol'
 import { reportAdapterStatus, startProtectionHeartbeat } from './protectionHandshake'
+import { requestOutcome } from './requestOutcome'
 
 const ALBEDO_CONFIRM_ORIGIN = 'https://albedo.link'
 const ALBEDO_WINDOW_NAME = 'auth.albedo.link'
@@ -62,24 +62,6 @@ startProtectionHeartbeat('albedo-popup')
  * it and the destination address is available directly in the intent params.
  */
 const TX_INTENTS = new Set(['tx', 'pay'])
-
-/** Forward a sign-outcome request to the bridge via the shared protocol. */
-function requestOutcome(xdr: string, networkPassphrase?: string): Promise<Outcome> {
-  const localId = crypto.randomUUID()
-
-  return new Promise((resolve) => {
-    function onMessage(event: MessageEvent) {
-      if (event.source !== window) return
-      const data = event.data as { type?: string; localId?: string; outcome?: string } | undefined
-      if (data?.type !== WINDOW_RESPONSE_TYPE || data.localId !== localId) return
-      window.removeEventListener('message', onMessage)
-      const outcome = data.outcome
-      resolve(outcome === 'proceed' || outcome === 'allow' ? outcome : 'cancel')
-    }
-    window.addEventListener('message', onMessage)
-    window.postMessage({ type: WINDOW_REQUEST_TYPE, localId, xdr, networkPassphrase }, '*')
-  })
-}
 
 /**
  * Build a synthetic albedoIntentResult rejection that looks identical to the
@@ -162,7 +144,7 @@ window.open = function grydlockOpen(
             }
 
             // Don't block the thread — run scoring async.
-            requestOutcome(xdr, network).then((outcome) => {
+            requestOutcome(xdr, network, 'albedo-popup').then((outcome) => {
               if (outcome === 'cancel') {
                 // Close the real popup and synthesize a rejection.
                 try {

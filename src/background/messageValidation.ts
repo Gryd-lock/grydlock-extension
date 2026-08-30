@@ -1,4 +1,5 @@
 import type {
+  RuntimeAwaitOutcomeMessage,
   RuntimeDecisionMadeMessage,
   RuntimeProtectionAdapterStatusMessage,
   RuntimeProtectionBridgeOnlineMessage,
@@ -7,6 +8,7 @@ import type {
   RuntimeReviewRequestMessage,
   RuntimeSignRequestMessage,
 } from '../intercept/protocol'
+import { SIGN_PROTOCOL_VERSION } from '../signing/pendingRequestState'
 import { PROTECTION_PROTOCOL_VERSION } from '../protection/protectionState'
 
 // UUID request IDs are currently 36 characters. The larger bound preserves
@@ -40,18 +42,50 @@ function isNonEmptyBoundedString(value: unknown, maxLength: number): value is st
   )
 }
 
-/** Validate an untrusted runtime value before XDR decoding or popup creation. */
+function isSigningAdapter(value: unknown): value is 'freighter' | 'albedo-popup' {
+  return value === 'freighter' || value === 'albedo-popup'
+}
+
+/**
+ * Validate an untrusted runtime value before XDR decoding or popup
+ * creation. There is deliberately no `requestId` field: the page/bridge
+ * boundary's correlation id never crosses into this message, and the
+ * background is the sole generator of the authoritative request id
+ * (returned in SIGN_ACK). A mismatched protocolVersion is checked by the
+ * caller and answered with a typed SIGN_REJECTED, not silently ignored.
+ */
 export function isRuntimeSignRequestMessage(
   message: unknown,
 ): message is RuntimeSignRequestMessage {
-  if (!isRecord(message) || message.type !== 'SIGN_REQUEST') return false
+  if (
+    !isRecord(message) ||
+    !hasOnlyKeys(message, ['type', 'protocolVersion', 'xdr', 'networkPassphrase', 'adapter']) ||
+    message.type !== 'SIGN_REQUEST'
+  ) {
+    return false
+  }
 
-  if (!isNonEmptyBoundedString(message.requestId, MAX_REQUEST_ID_LENGTH)) return false
+  if (typeof message.protocolVersion !== 'number' || !Number.isInteger(message.protocolVersion)) {
+    return false
+  }
   if (!isNonEmptyBoundedString(message.xdr, MAX_XDR_LENGTH)) return false
+  if (!isSigningAdapter(message.adapter)) return false
 
   return (
     message.networkPassphrase === undefined ||
     isNonEmptyBoundedString(message.networkPassphrase, MAX_NETWORK_PASSPHRASE_LENGTH)
+  )
+}
+
+/** Validate the bridge's resume/status handshake before reading durable pending state. */
+export function isRuntimeAwaitOutcomeMessage(
+  message: unknown,
+): message is RuntimeAwaitOutcomeMessage {
+  return (
+    isRecord(message) &&
+    hasOnlyKeys(message, ['type', 'requestId']) &&
+    message.type === 'AWAIT_OUTCOME' &&
+    isNonEmptyBoundedString(message.requestId, MAX_REQUEST_ID_LENGTH)
   )
 }
 
@@ -61,8 +95,9 @@ export function isRuntimeDecisionMadeMessage(
 ): message is RuntimeDecisionMadeMessage {
   return (
     isRecord(message) &&
-    hasOnlyKeys(message, ['type', 'requestId', 'decision']) &&
+    hasOnlyKeys(message, ['type', 'protocolVersion', 'requestId', 'decision']) &&
     message.type === 'DECISION_MADE' &&
+    message.protocolVersion === SIGN_PROTOCOL_VERSION &&
     isNonEmptyBoundedString(message.requestId, MAX_REQUEST_ID_LENGTH) &&
     (message.decision === 'proceed' || message.decision === 'cancel')
   )
@@ -74,8 +109,9 @@ export function isRuntimeReviewRequestMessage(
 ): message is RuntimeReviewRequestMessage {
   return (
     isRecord(message) &&
-    hasOnlyKeys(message, ['type', 'requestId']) &&
+    hasOnlyKeys(message, ['type', 'protocolVersion', 'requestId']) &&
     message.type === 'GET_REVIEW' &&
+    message.protocolVersion === SIGN_PROTOCOL_VERSION &&
     isNonEmptyBoundedString(message.requestId, MAX_REQUEST_ID_LENGTH)
   )
 }

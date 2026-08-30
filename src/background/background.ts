@@ -4,18 +4,25 @@ import {
   exportDiagnostics,
   recordDiagnosticEvent,
 } from '../diagnostics/diagnosticsStore'
-import { resolveReviewOutcome } from '../intercept/resolveOutcome'
+import { buildAggregatedReview } from '../intercept/resolveOutcome'
 import type {
   Decision,
+  Outcome,
+  RuntimeAwaitOutcomeMessage,
+  RuntimeDecisionMadeMessage,
   RuntimeReviewRequestMessage,
   RuntimeReviewResponseMessage,
+  RuntimeSignAckMessage,
   RuntimeSignOutcomeMessage,
+  RuntimeSignRejectedMessage,
+  RuntimeSignRequestMessage,
   RuntimeProtectionStatusQueryMessage,
 } from '../intercept/protocol'
 import type { AggregatedReview } from '../review/model'
 import { recordDecision } from '../lib/history'
 import { tierForScore } from '../lib/tiers'
 import {
+  isRuntimeAwaitOutcomeMessage,
   isRuntimeDecisionMadeMessage,
   isRuntimeProtectionAdapterStatusMessage,
   isRuntimeProtectionBridgeOnlineMessage,
@@ -34,19 +41,42 @@ import {
   type ProtectionRecord,
   type ProtectionSnapshot,
 } from '../protection/protectionState'
+import {
+  SIGN_PROTOCOL_VERSION,
+  REVIEW_DEADLINE_MS,
+  admissionCheck,
+  applyTransition,
+  isExpired,
+  isTerminal,
+  outcomeForState,
+  shouldPrune,
+  validatePendingRequestRecord,
+  type PendingRequestRecord,
+  type PendingState,
+} from '../signing/pendingRequestState'
 
-export const DEFAULT_TIMEOUT_MS = 60_000
+export const DEFAULT_TIMEOUT_MS = REVIEW_DEADLINE_MS
 export const PROTECTION_STORAGE_KEY = 'protectionStateV1'
+export const PENDING_REQUEST_STORAGE_KEY = 'pendingRequestStateV1'
 const HANDSHAKE_TTL_MS = 5_000
 const MAX_PENDING_HANDSHAKES = 100
 
-interface PendingReview {
-  resolve: (decision: Decision) => void
-  review: AggregatedReview
+interface PendingSignEntry {
+  record: PendingRequestRecord
+  review?: AggregatedReview
+  resolvers: Array<(outcome: Outcome) => void>
 }
 
-/** Review data stays in extension memory and is never placed in the popup URL. */
-export const pendingDecisions = new Map<string, PendingReview>()
+/**
+ * Resolver functions never survive worker suspension, so they live only in
+ * this in-memory map, keyed by the background-generated `requestId` — the
+ * only identifier ever treated as authoritative. `entry.record` is the
+ * serializable projection persisted to chrome.storage.session (see
+ * persistPendingRequests/restorePendingRequests below); review content
+ * never reaches the popup URL and the page/bridge boundary's own
+ * correlation id never reaches this map at all.
+ */
+export const pendingSignRequests = new Map<string, PendingSignEntry>()
 
 const protectionRecords = new Map<string, ProtectionRecord>()
 const bridgeContexts = new Map<string, { origin: string; documentId?: string }>()
@@ -283,8 +313,130 @@ function handleProtectionHandshakeAck(
 
 const protectionRestore = restoreProtectionRecords()
 
+function persistPendingRequests(): void {
+  const session = chrome.storage?.session
+  if (!session) return
+  const records = [...pendingSignRequests.values()].map((entry) => entry.record)
+  void session.set({ [PENDING_REQUEST_STORAGE_KEY]: records }).catch(() => {
+    void recordDiagnosticEvent('storage.write_failure').catch(() => {})
+  })
+}
+
+async function restorePendingRequests(): Promise<void> {
+  const session = chrome.storage?.session
+  if (!session) return
+  try {
+    const stored = await session.get(PENDING_REQUEST_STORAGE_KEY)
+    const values = Array.isArray(stored[PENDING_REQUEST_STORAGE_KEY])
+      ? stored[PENDING_REQUEST_STORAGE_KEY]
+      : []
+    const now = Date.now()
+    for (const raw of values) {
+      const record = validatePendingRequestRecord(raw)
+      if (!record || shouldPrune(record, now)) continue
+      // A worker restart never silently loses a deadline: any record whose
+      // absolute deadline already passed is settled 'expired' on restore,
+      // not left dangling for a resume attempt that could never succeed.
+      const effective = isExpired(record, now)
+        ? (applyTransition(record, 'expired', now) ?? record)
+        : record
+      pendingSignRequests.set(effective.requestId, { record: effective, resolvers: [] })
+    }
+    persistPendingRequests()
+  } catch {
+    void recordDiagnosticEvent('storage.write_failure').catch(() => {})
+  }
+}
+
+const pendingRequestsRestore = restorePendingRequests()
+
+function pruneStalePendingRequests(): void {
+  const now = Date.now()
+  let changed = false
+  for (const [requestId, entry] of pendingSignRequests) {
+    if (isExpired(entry.record, now)) {
+      settlePendingRequest(requestId, 'expired')
+      changed = true
+      continue
+    }
+    if (shouldPrune(entry.record, now)) {
+      pendingSignRequests.delete(requestId)
+      changed = true
+    }
+  }
+  if (changed) persistPendingRequests()
+}
+
+function transitionPendingRequest(
+  requestId: string,
+  next: PendingState,
+  patch: Partial<PendingRequestRecord> = {},
+): PendingRequestRecord | undefined {
+  const entry = pendingSignRequests.get(requestId)
+  if (!entry) return undefined
+  const updated = applyTransition(entry.record, next, Date.now(), patch)
+  if (!updated) return undefined
+  entry.record = updated
+  persistPendingRequests()
+  return updated
+}
+
+/** The first valid terminal transition wins; every later call for the same requestId is a no-op against an already-settled record. */
+function settlePendingRequest(requestId: string, state: PendingState): void {
+  const entry = pendingSignRequests.get(requestId)
+  if (!entry) return
+  const alreadySettled = entry.record.state === state
+  const updated = applyTransition(entry.record, state, Date.now())
+  if (!updated) return
+  entry.record = updated
+  persistPendingRequests()
+  if (!alreadySettled && (state === 'proceed' || state === 'cancel') && entry.review) {
+    recordFirstDecision(entry.review, state)
+  }
+  const outcome = outcomeForState(state)
+  const resolvers = entry.resolvers
+  entry.resolvers = []
+  for (const resolve of resolvers) resolve(outcome)
+  clearBadgeIfIdle()
+}
+
+function createPopupWindow(requestId: string): Promise<chrome.windows.Window> {
+  const params = new URLSearchParams({ mode: 'intercept', requestId })
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.windows.create(
+        {
+          url: chrome.runtime.getURL(`src/popup/index.html?${params.toString()}`),
+          type: 'popup',
+          width: 440,
+          height: 680,
+        },
+        (createdWindow) => {
+          if (chrome.runtime.lastError || !createdWindow) {
+            reject(chrome.runtime.lastError ?? new Error('popup creation failed'))
+            return
+          }
+          resolve(createdWindow)
+        },
+      )
+    } catch (error) {
+      reject(error)
+    }
+  })
+}
+
+/** windowId binds a pending request to its exact review popup ("review window"). First legitimate contact binds it (TOFU) — safe because requestId is an unguessable, never-page-visible secret, so only the correct popup can reach this at all; every later message must match exactly. */
+function bindPopupWindow(requestId: string, windowId: number): void {
+  const entry = pendingSignRequests.get(requestId)
+  if (!entry || entry.record.windowId !== undefined) return
+  entry.record = { ...entry.record, windowId }
+  persistPendingRequests()
+}
+
+/** Terminal (tombstoned) entries are kept around for replay/idempotency, so "idle" means no non-terminal entry remains — not an empty map. */
 function clearBadgeIfIdle() {
-  if (pendingDecisions.size === 0) {
+  const hasActive = [...pendingSignRequests.values()].some((entry) => !isTerminal(entry.record.state))
+  if (!hasActive) {
     chrome.action.setBadgeText({ text: '' })
   }
 }
@@ -323,79 +475,233 @@ function recordFirstDecision(review: AggregatedReview, decision: Decision) {
   }).catch(() => {})
 }
 
-export function requestDecision(requestId: string, review: AggregatedReview): Promise<Decision> {
-  const score = scoreForSeverity(review.severity)
-  const tierInfo = tierForScore(score)
-  chrome.action.setBadgeText({ text: '!' })
-  chrome.action.setBadgeBackgroundColor({ color: tierInfo.colour })
+/**
+ * Admits a SIGN_REQUEST: validates protocol/sender, enforces admission
+ * limits, then persists durable pending state *before* building the review
+ * or opening the popup. Responds with SIGN_ACK immediately once the request
+ * is durably recorded — it does not wait for a user decision, so this
+ * message port closes quickly and the worker is not required to stay alive
+ * for the whole review. The caller resumes/awaits the eventual decision via
+ * AWAIT_OUTCOME (handleAwaitOutcome), which is safe to call before, during,
+ * or after a worker restart because it only ever reads durable state.
+ */
+function handleSignRequest(
+  message: RuntimeSignRequestMessage,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: RuntimeSignAckMessage | RuntimeSignRejectedMessage) => void,
+): void {
+  let responded = false
+  const respondOnce = (response: RuntimeSignAckMessage | RuntimeSignRejectedMessage) => {
+    if (responded) return
+    responded = true
+    sendResponse(response)
+  }
 
-  return new Promise((resolve) => {
-    pendingDecisions.set(requestId, {
-      resolve: (decision) => {
-        pendingDecisions.delete(requestId)
-        recordFirstDecision(review, decision)
-        resolve(decision)
-        clearBadgeIfIdle()
-      },
-      review,
+  if (message.protocolVersion !== SIGN_PROTOCOL_VERSION) {
+    respondOnce({ type: 'SIGN_REJECTED', reason: 'protocol-incompatible' })
+    return
+  }
+  const location = senderLocation(sender)
+  if (!location) {
+    respondOnce({ type: 'SIGN_REJECTED', reason: 'sender-unbound' })
+    return
+  }
+
+  void pendingRequestsRestore
+    .then(async () => {
+      pruneStalePendingRequests()
+
+      const activeRecords = [...pendingSignRequests.values()]
+        .map((entry) => entry.record)
+        .filter((record) => !isTerminal(record.state))
+      const admission = admissionCheck(activeRecords, location.tabId, location.frameId)
+      if (admission !== 'ok') {
+        void recordDiagnosticEvent('signing.request.admission_rejected').catch(() => {})
+        respondOnce({
+          type: 'SIGN_REJECTED',
+          reason: admission === 'frame-limit' ? 'frame-limit' : 'global-limit',
+        })
+        return
+      }
+
+      const now = Date.now()
+      const requestId = crypto.randomUUID()
+      const record: PendingRequestRecord = {
+        requestId,
+        adapter: message.adapter,
+        tabId: location.tabId,
+        frameId: location.frameId,
+        documentId: sender.documentId,
+        documentBound: sender.documentId !== undefined,
+        networkPassphrase: message.networkPassphrase,
+        state: 'received',
+        protocolVersion: SIGN_PROTOCOL_VERSION,
+        createdAt: now,
+        deadlineAt: now + DEFAULT_TIMEOUT_MS,
+      }
+      pendingSignRequests.set(requestId, { record, resolvers: [] })
+      // Durable before any decode/scoring/UI work — a worker restart mid-decode
+      // still knows this request exists even if the review itself is lost.
+      persistPendingRequests()
+
+      respondOnce({ type: 'SIGN_ACK', requestId, deadlineAt: record.deadlineAt })
+
+      transitionPendingRequest(requestId, 'validating')
+      const review = await buildAggregatedReview(
+        message.xdr,
+        // The current local adapter only accepts account strings. Keep that
+        // projection here, after the review engine has enforced a typed,
+        // network-scoped account target.
+        { getScore: (target) => getScore(target.value) },
+        message.networkPassphrase,
+      )
+
+      if (!review) {
+        settlePendingRequest(requestId, 'failed')
+        return
+      }
+
+      transitionPendingRequest(requestId, 'assessing')
+      const withDigest = transitionPendingRequest(requestId, 'awaiting_review', {
+        xdrDigest: review.review.xdrDigest,
+      })
+      if (!withDigest) return // already settled (e.g. tab closed/navigated while decoding)
+
+      const entry = pendingSignRequests.get(requestId)
+      if (entry) entry.review = review
+
+      const score = scoreForSeverity(review.severity)
+      const tierInfo = tierForScore(score)
+      chrome.action.setBadgeText({ text: '!' })
+      chrome.action.setBadgeBackgroundColor({ color: tierInfo.colour })
+
+      try {
+        const popupWindow = await createPopupWindow(requestId)
+        if (typeof popupWindow.id === 'number') bindPopupWindow(requestId, popupWindow.id)
+      } catch {
+        settlePendingRequest(requestId, 'failed')
+      }
     })
-
-    const params = new URLSearchParams({ mode: 'intercept', requestId })
-
-    chrome.windows.create({
-      url: chrome.runtime.getURL(`src/popup/index.html?${params.toString()}`),
-      type: 'popup',
-      width: 440,
-      height: 680,
+    .catch(() => {
+      respondOnce({ type: 'SIGN_REJECTED', reason: 'sender-unbound' })
     })
+}
+
+/** The bridge's resume/status handshake. Safe to call repeatedly and safe to retry after a worker restart: the answer always comes from durable state, never from a resolver that could not have survived suspension. */
+function handleAwaitOutcome(
+  message: RuntimeAwaitOutcomeMessage,
+  sendResponse: (response: RuntimeSignOutcomeMessage) => void,
+): void {
+  void pendingRequestsRestore.then(() => {
+    pruneStalePendingRequests()
+    const entry = pendingSignRequests.get(message.requestId)
+    if (!entry) {
+      sendResponse({ type: 'SIGN_OUTCOME', requestId: message.requestId, outcome: 'cancel' })
+      return
+    }
+    if (isTerminal(entry.record.state)) {
+      sendResponse({
+        type: 'SIGN_OUTCOME',
+        requestId: message.requestId,
+        outcome: outcomeForState(entry.record.state),
+      })
+      return
+    }
+    entry.resolvers.push((outcome) =>
+      sendResponse({ type: 'SIGN_OUTCOME', requestId: message.requestId, outcome }),
+    )
   })
 }
 
-function reviewResponse(message: RuntimeReviewRequestMessage): RuntimeReviewResponseMessage {
-  const pending = pendingDecisions.get(message.requestId)
-  return { type: 'REVIEW_DATA', requestId: message.requestId, review: pending?.review }
+/**
+ * Popup-originated read. Binds (or checks) the review window the same way
+ * handleDecisionMade does, so copying a review URL into another window
+ * reveals no transaction: a windowId mismatch gets an empty response, not
+ * review content.
+ */
+function handleGetReview(
+  message: RuntimeReviewRequestMessage,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: RuntimeReviewResponseMessage) => void,
+): void {
+  void pendingRequestsRestore.then(() => {
+    const entry = pendingSignRequests.get(message.requestId)
+    const senderWindowId = sender.tab?.windowId
+    if (!entry || typeof senderWindowId !== 'number') {
+      sendResponse({ type: 'REVIEW_DATA', requestId: message.requestId })
+      return
+    }
+    if (entry.record.windowId === undefined) {
+      bindPopupWindow(message.requestId, senderWindowId)
+    } else if (entry.record.windowId !== senderWindowId) {
+      void recordDiagnosticEvent('signing.review.window_mismatch').catch(() => {})
+      sendResponse({ type: 'REVIEW_DATA', requestId: message.requestId })
+      return
+    }
+    sendResponse({ type: 'REVIEW_DATA', requestId: message.requestId, review: entry.review })
+  })
+}
+
+/**
+ * Popup-originated decision. A decision is only honored when: the record is
+ * still 'awaiting_review' (not already terminal, not yet ready — replay and
+ * premature decisions are both no-ops), and the sender's own window matches
+ * the bound review window (or is the first legitimate contact). Nothing
+ * about the dApp tab/frame/document is re-checked here — that binding is
+ * enforced by tab close/navigation invalidation below, which settles the
+ * request the moment the originating context goes away.
+ */
+function handleDecisionMade(
+  message: RuntimeDecisionMadeMessage,
+  sender: chrome.runtime.MessageSender,
+): void {
+  void pendingRequestsRestore.then(() => {
+    pruneStalePendingRequests()
+    const entry = pendingSignRequests.get(message.requestId)
+    if (!entry || entry.record.state !== 'awaiting_review') return
+
+    const senderWindowId = sender.tab?.windowId
+    if (typeof senderWindowId !== 'number') return
+    if (entry.record.windowId === undefined) {
+      bindPopupWindow(message.requestId, senderWindowId)
+    } else if (entry.record.windowId !== senderWindowId) {
+      void recordDiagnosticEvent('signing.decision.window_mismatch').catch(() => {})
+      return
+    }
+
+    settlePendingRequest(message.requestId, message.decision)
+  })
+}
+
+/** Any pending request bound to this tab/frame is invalidated: an originating tab closing or navigating away can no longer be released or approved. */
+function invalidatePendingRequestsForTab(tabId: number): void {
+  void pendingRequestsRestore.then(() => {
+    for (const [requestId, entry] of pendingSignRequests) {
+      if (entry.record.tabId === tabId && !isTerminal(entry.record.state)) {
+        settlePendingRequest(requestId, 'cancel')
+      }
+    }
+  })
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   if (isRuntimeSignRequestMessage(message)) {
-    resolveReviewOutcome(
-      message.xdr,
-      {
-        // The current local adapter only accepts account strings. Keep that
-        // projection here, after the review engine has enforced a typed,
-        // network-scoped account target.
-        getScore: (target) => getScore(target.value),
-        requestDecision: (review) => requestDecision(message.requestId, review),
-      },
-      message.networkPassphrase,
-    )
-      .then((outcome) => {
-        const response: RuntimeSignOutcomeMessage = {
-          type: 'SIGN_OUTCOME',
-          requestId: message.requestId,
-          outcome,
-        }
-        sendResponse(response)
-      })
-      .catch(() => {
-        const response: RuntimeSignOutcomeMessage = {
-          type: 'SIGN_OUTCOME',
-          requestId: message.requestId,
-          outcome: 'cancel',
-        }
-        sendResponse(response)
-      })
+    handleSignRequest(message, _sender, sendResponse)
+    return true
+  }
 
+  if (isRuntimeAwaitOutcomeMessage(message)) {
+    handleAwaitOutcome(message, sendResponse)
     return true
   }
 
   if (isRuntimeReviewRequestMessage(message)) {
-    sendResponse(reviewResponse(message))
-    return undefined
+    handleGetReview(message, _sender, sendResponse)
+    return true
   }
 
   if (isRuntimeDecisionMadeMessage(message)) {
-    pendingDecisions.get(message.requestId)?.resolve(message.decision)
+    handleDecisionMade(message, _sender)
   }
 
   if (isRuntimeProtectionHandshakeMessage(message)) {
@@ -503,6 +809,7 @@ chrome.tabs?.onUpdated.addListener((tabId, changeInfo) => {
     }
     persistProtectionRecords()
   })
+  invalidatePendingRequestsForTab(tabId)
 })
 chrome.tabs?.onRemoved.addListener((tabId) => {
   void protectionRestore.then(() => {
@@ -512,5 +819,17 @@ chrome.tabs?.onRemoved.addListener((tabId) => {
       if (record.tabId === tabId) protectionRecords.delete(key)
     }
     persistProtectionRecords()
+  })
+  invalidatePendingRequestsForTab(tabId)
+})
+
+/** Closing the review popup settles the request as a cancellation — the user never saw a decision the request could still honor. */
+chrome.windows.onRemoved?.addListener((windowId) => {
+  void pendingRequestsRestore.then(() => {
+    for (const [requestId, entry] of pendingSignRequests) {
+      if (entry.record.windowId === windowId && !isTerminal(entry.record.state)) {
+        settlePendingRequest(requestId, 'cancel')
+      }
+    }
   })
 })

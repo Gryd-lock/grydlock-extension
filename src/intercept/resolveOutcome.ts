@@ -25,17 +25,24 @@ export interface ResolveReviewOutcomeDeps {
 }
 
 /**
- * Production review path.  A malformed envelope is deliberately presented as
- * an incomplete review instead of being allowed; opaque effects always reach
- * the user and only account targets are eligible for destination assessment.
+ * Builds the bounded, scored review without waiting on a user decision. A
+ * malformed envelope deliberately produces `null` instead of an implicit
+ * allow; opaque effects always reach the user and only account targets are
+ * eligible for destination assessment.
+ *
+ * Split out from resolveReviewOutcome so a caller (the background worker's
+ * signing state machine) can persist durable pending-request state and
+ * respond to its caller before a user decision exists, rather than holding
+ * a message port open for the full review-plus-popup duration — a worker
+ * kept alive only by an open port is not resilient to MV3 suspension.
  */
-export async function resolveReviewOutcome(
+export async function buildAggregatedReview(
   xdr: string,
-  deps: ResolveReviewOutcomeDeps,
+  deps: Pick<ResolveReviewOutcomeDeps, 'extractReview' | 'getScore'>,
   networkPassphrase?: string,
-): Promise<Outcome> {
+): Promise<AggregatedReview | null> {
   const review = (deps.extractReview ?? extractTransactionReview)(xdr, networkPassphrase)
-  if (!review) return 'cancel'
+  if (!review) return null
 
   const evidence: TargetEvidence[] = await Promise.all(
     scoreableTargets(review).map(async (target) => {
@@ -50,7 +57,18 @@ export async function resolveReviewOutcome(
     }),
   )
 
-  return deps.requestDecision(aggregateReview(review, evidence))
+  return aggregateReview(review, evidence)
+}
+
+/** Production review path used where a single Promise spanning the whole review-plus-decision is acceptable (e.g. tests, the legacy non-durable caller). */
+export async function resolveReviewOutcome(
+  xdr: string,
+  deps: ResolveReviewOutcomeDeps,
+  networkPassphrase?: string,
+): Promise<Outcome> {
+  const review = await buildAggregatedReview(xdr, deps, networkPassphrase)
+  if (!review) return 'cancel'
+  return deps.requestDecision(review)
 }
 
 function tierForScore(score: number): 'low' | 'elevated' | 'high' | 'critical' {

@@ -107,14 +107,19 @@ async function launchExtension(url: string): Promise<ExtensionHarness> {
   }
 }
 
-async function submitTransaction(page: Page, xdr: string) {
+async function submitTransaction(page: Page, xdr: string, messageId = 38) {
   return page.evaluate(
-    ({ freighterRequestSource, freighterResponseSource, submitTransactionType, transactionXdr }) =>
+    ({
+      freighterRequestSource,
+      freighterResponseSource,
+      submitTransactionType,
+      transactionXdr,
+      requestMessageId,
+    }) =>
       new Promise<{
         freighterSawReviewedRequest: boolean
         response: Record<string, unknown>
       }>((resolve) => {
-        const messageId = 38
         let freighterSawReviewedRequest = false
 
         window.addEventListener('message', (event) => {
@@ -124,14 +129,14 @@ async function submitTransaction(page: Page, xdr: string) {
           if (
             data.source === freighterRequestSource &&
             data.type === submitTransactionType &&
-            data.messageId === messageId &&
+            data.messageId === requestMessageId &&
             data.__grydlockReviewed === true
           ) {
             freighterSawReviewedRequest = true
             window.postMessage(
               {
                 source: freighterResponseSource,
-                messageId,
+                messageId: requestMessageId,
                 signedTransaction: 'signed-by-freighter',
                 signerAddress: 'GBROWSERTESTSIGNER',
               },
@@ -139,7 +144,9 @@ async function submitTransaction(page: Page, xdr: string) {
             )
           }
 
-          if (data.source === freighterResponseSource) {
+          // messageId disambiguates concurrent submitTransaction calls sharing one page:
+          // each call's own listener must only resolve on ITS OWN request's response.
+          if (data.source === freighterResponseSource && data.messageId === requestMessageId) {
             resolve({
               freighterSawReviewedRequest,
               response: data,
@@ -150,7 +157,7 @@ async function submitTransaction(page: Page, xdr: string) {
         window.postMessage(
           {
             source: freighterRequestSource,
-            messageId,
+            messageId: requestMessageId,
             type: submitTransactionType,
             transactionXdr,
             networkPassphrase: 'Test SDF Network ; September 2015',
@@ -163,6 +170,7 @@ async function submitTransaction(page: Page, xdr: string) {
       freighterResponseSource: FREIGHTER_RESPONSE_SOURCE,
       submitTransactionType: SUBMIT_TRANSACTION_TYPE,
       transactionXdr: xdr,
+      requestMessageId: messageId,
     },
   )
 }
@@ -296,6 +304,53 @@ test.describe('Freighter signTransaction interception', () => {
       timeout: 10_000,
     })
     await toolbar.close()
+  })
+
+  test('closing the review popup settles the request as cancelled instead of hanging the dApp', async () => {
+    const popupPromise = harness!.context.waitForEvent('page')
+    const responsePromise = submitTransaction(harness!.page, buildPaymentXdr())
+
+    const popup = await popupPromise
+    await expect(popup.getByRole('heading', { name: /risk/i })).toBeVisible()
+    await popup.close()
+
+    await expect(responsePromise).resolves.toMatchObject({
+      freighterSawReviewedRequest: false,
+      response: {
+        source: FREIGHTER_RESPONSE_SOURCE,
+        signedTransaction: '',
+        apiError: { code: -4 },
+      },
+    })
+  })
+
+  test('two concurrent requests from the same page open two popups and settle independently, without colliding', async () => {
+    const firstPopupPromise = harness!.context.waitForEvent('page')
+    const firstResponsePromise = submitTransaction(harness!.page, buildPaymentXdr(), 101)
+    const firstPopup = await firstPopupPromise
+    await expect(firstPopup.getByRole('heading', { name: /risk/i })).toBeVisible()
+
+    const secondPopupPromise = harness!.context.waitForEvent('page')
+    const secondResponsePromise = submitTransaction(harness!.page, buildPaymentXdr(), 102)
+    const secondPopup = await secondPopupPromise
+    await expect(secondPopup.getByRole('heading', { name: /risk/i })).toBeVisible()
+
+    expect(firstPopup).not.toBe(secondPopup)
+
+    // Decide them in reverse order: if either request's state collided with the
+    // other's (e.g. sharing one map entry), this would resolve the wrong promise
+    // with the wrong outcome instead of each settling independently.
+    await makeDecision(Promise.resolve(secondPopup), 'Cancel')
+    await makeDecision(Promise.resolve(firstPopup), 'Proceed')
+
+    await expect(firstResponsePromise).resolves.toMatchObject({
+      freighterSawReviewedRequest: true,
+      response: { messageId: 101, signedTransaction: 'signed-by-freighter' },
+    })
+    await expect(secondResponsePromise).resolves.toMatchObject({
+      freighterSawReviewedRequest: false,
+      response: { messageId: 102, signedTransaction: '' },
+    })
   })
 
   test('surfaces an incompatible protocol observed in a child frame', async () => {

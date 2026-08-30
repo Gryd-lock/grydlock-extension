@@ -134,6 +134,45 @@ describe('App', () => {
 describe('App in intercept mode', () => {
   const originalChrome = globalThis.chrome
 
+  function reviewFixture(severity: 'info' | 'warning' | 'high' | 'critical') {
+    return {
+      severity,
+      evidence: [],
+      findings:
+        severity === 'high'
+          ? [
+              {
+                code: 'authority-change',
+                severity: 'high' as const,
+                title: 'Account authority change',
+                detail: 'Signer changed.',
+                operationIndex: 0,
+              },
+            ]
+          : [],
+      review: {
+        schemaVersion: 1 as const,
+        policyVersion: 1 as const,
+        networkPassphrase: 'Custom network',
+        xdrDigest: 'a'.repeat(64),
+        envelope: { type: 'transaction' as const, source: 'GSOURCE', operationCount: 1 },
+        operations: [],
+        findings: [],
+      },
+    }
+  }
+
+  function mockReviewResponse(review: ReturnType<typeof reviewFixture> | undefined) {
+    vi.mocked(chrome.runtime.sendMessage).mockImplementation((message, callback) => {
+      if (
+        (message as { type?: string }).type === 'GET_REVIEW' &&
+        typeof callback === 'function'
+      ) {
+        callback({ review })
+      }
+    })
+  }
+
   beforeEach(() => {
     vi.restoreAllMocks()
     // @ts-expect-error test-only stub of the chrome extension API
@@ -145,95 +184,75 @@ describe('App in intercept mode', () => {
     window.history.pushState(null, '', '/')
   })
 
-  it('renders the tier from URL params without calling the adapter', async () => {
-    const getScoreSpy = vi.spyOn(adapter, 'getScore')
-    window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=85')
-    const { container } = render(<App />)
-    expect(screen.getByText(/critical risk/i)).toBeInTheDocument()
-    expect(screen.getByText('GDEST')).toBeInTheDocument()
-    expect(screen.getByText(/critical risk/i).closest('.popup')).toHaveAttribute(
-      'data-tier',
-      'critical',
+  it('requests the review with the versioned protocol and the opaque requestId only — nothing else from the URL', async () => {
+    mockReviewResponse(reviewFixture('info'))
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-review')
+
+    render(<App />)
+
+    await screen.findByText(/low risk/i)
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      { type: 'GET_REVIEW', protocolVersion: 1, requestId: 'req-review' },
+      expect.any(Function),
     )
-    expect(getScoreSpy).not.toHaveBeenCalled()
+  })
+
+  it('loads and renders worker-resident review data without placing it in the URL', async () => {
+    mockReviewResponse(reviewFixture('high'))
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-review')
+
+    const { container } = render(<App />)
+
+    expect(await screen.findByText('Custom network')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(/account authority change/i)
+    expect(window.location.search).not.toContain('digest')
 
     // a11y check
     const results = await axe(container)
     expect(results).toHaveNoViolations()
   })
 
-  it('loads and renders worker-resident review data without placing it in the URL', async () => {
-    const review = {
-      severity: 'high' as const,
-      evidence: [],
-      findings: [
-        {
-          code: 'authority-change',
-          severity: 'high' as const,
-          title: 'Account authority change',
-          detail: 'Signer changed.',
-          operationIndex: 0,
-        },
-      ],
-      review: {
-        schemaVersion: 1 as const,
-        policyVersion: 1 as const,
-        networkPassphrase: 'Custom network',
-        xdrDigest: 'a'.repeat(64),
-        envelope: { type: 'transaction' as const, source: 'GSOURCE', operationCount: 1 },
-        operations: [
-          {
-            index: 0,
-            type: 'setOptions',
-            source: 'GSOURCE',
-            coverage: 'understood' as const,
-            summary: 'Change account options',
-            facts: [],
-            targets: [],
-            findings: [],
-          },
-        ],
-        findings: [],
-      },
-    }
-    vi.mocked(chrome.runtime.sendMessage).mockImplementation((message, callback) => {
-      if (
-        (message as { type?: string }).type === 'GET_REVIEW' &&
-        typeof callback === 'function'
-      ) {
-        callback({ review })
-      }
-    })
-    window.history.pushState(null, '', '?mode=intercept&requestId=req-review')
-
-    render(<App />)
-
-    expect(await screen.findByText('Custom network')).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent(/account authority change/i)
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
-      { type: 'GET_REVIEW', requestId: 'req-review' },
-      expect.any(Function),
-    )
-    expect(window.location.search).not.toContain('digest')
-  })
-
-  it('sends the decision and closes on Proceed', () => {
-    window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=10')
+  it('fails closed — shows a reject-only state, not a reassuring low-risk default — when no review can be loaded', async () => {
+    mockReviewResponse(undefined)
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-1')
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => {})
+
     render(<App />)
-    fireEvent.click(screen.getByText('Proceed'))
+
+    expect(await screen.findByText(/could not be loaded for review/i)).toBeInTheDocument()
+    expect(screen.queryByText(/low risk/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Proceed')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Reject'))
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
       type: 'DECISION_MADE',
+      protocolVersion: 1,
+      requestId: 'req-1',
+      decision: 'cancel',
+    })
+    expect(closeSpy).toHaveBeenCalled()
+  })
+
+  it('sends the decision and closes on Proceed', async () => {
+    mockReviewResponse(reviewFixture('info'))
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-1')
+    const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => {})
+    render(<App />)
+    fireEvent.click(await screen.findByText('Proceed'))
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'DECISION_MADE',
+      protocolVersion: 1,
       requestId: 'req-1',
       decision: 'proceed',
     })
     expect(closeSpy).toHaveBeenCalled()
   })
 
-  it('blocks high-risk proceed until the user confirms', () => {
-    window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=60')
+  it('blocks high-risk proceed until the user confirms', async () => {
+    mockReviewResponse(reviewFixture('high'))
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-1')
     render(<App />)
-    const proceedButton = screen.getByText('Proceed')
+    const proceedButton = await screen.findByText('Proceed')
     expect(proceedButton).toBeDisabled()
     fireEvent.click(
       screen.getByLabelText(/i understand this destination shows strong risk signals/i),
@@ -241,24 +260,28 @@ describe('App in intercept mode', () => {
     expect(proceedButton).toBeEnabled()
   })
 
-  it('blocks critical-risk proceed until the user types the confirmation phrase', () => {
-    window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=85')
+  it('blocks critical-risk proceed until the user types the confirmation phrase', async () => {
+    mockReviewResponse(reviewFixture('critical'))
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-1')
     render(<App />)
-    const proceedButton = screen.getByText('Proceed')
+    const proceedButton = await screen.findByText('Proceed')
+    const input = screen.getByLabelText(/type critical to enable proceed/i)
     expect(proceedButton).toBeDisabled()
-    fireEvent.change(screen.getByLabelText(/type critical to enable proceed/i), {
-      target: { value: 'critical' },
-    })
+    fireEvent.change(input, { target: { value: 'high' } })
+    expect(proceedButton).toBeDisabled()
+    fireEvent.change(input, { target: { value: 'critical' } })
     expect(proceedButton).toBeEnabled()
   })
 
-  it('sends cancel and closes on Cancel', () => {
-    window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=10')
+  it('sends cancel and closes on Cancel', async () => {
+    mockReviewResponse(reviewFixture('info'))
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-1')
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => {})
     render(<App />)
-    fireEvent.click(screen.getByText('Cancel'))
+    fireEvent.click(await screen.findByText('Cancel'))
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
       type: 'DECISION_MADE',
+      protocolVersion: 1,
       requestId: 'req-1',
       decision: 'cancel',
     })
@@ -266,33 +289,28 @@ describe('App in intercept mode', () => {
   })
 
   it('sends cancel and closes when Escape is pressed', async () => {
-    window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=85')
+    mockReviewResponse(reviewFixture('critical'))
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-1')
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => {})
     render(<App />)
+    await screen.findByText('Proceed')
 
     await userEvent.setup().keyboard('{Escape}')
 
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
       type: 'DECISION_MADE',
+      protocolVersion: 1,
       requestId: 'req-1',
       decision: 'cancel',
     })
     expect(closeSpy).toHaveBeenCalled()
   })
 
-  it('focuses Cancel so a critical warning can be dismissed immediately', () => {
-    window.history.pushState(null, '', '?mode=intercept&requestId=req-1&destination=GDEST&score=85')
+  it('focuses Cancel so a critical warning can be dismissed immediately', async () => {
+    mockReviewResponse(reviewFixture('critical'))
+    window.history.pushState(null, '', '?mode=intercept&requestId=req-1')
     render(<App />)
+    await screen.findByText('Proceed')
     expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
-  })
-
-  it('falls back to an empty destination list when destinations JSON is malformed', () => {
-    window.history.pushState(
-      null,
-      '',
-      '?mode=intercept&requestId=req-1&destinations=%7Bbad-json&score=10',
-    )
-    render(<App />)
-    expect(screen.getByText(/low risk/i)).toBeInTheDocument()
   })
 })

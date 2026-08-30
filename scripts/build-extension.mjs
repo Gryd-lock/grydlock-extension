@@ -9,13 +9,20 @@ const entries = [
 ]
 
 const sizeBudgets = [
-  { outfile: 'dist/mainWorld.js', budgetBytes: 5 * 1024, label: 'mainWorld.js' },
+  // Raised from 5.00 KB alongside the one-shot signing protocol: mainWorld.js now
+  // shares requestOutcome.ts (adapter tag, page-side absolute deadline) instead of
+  // an inlined helper. Still tight enough to catch an accidental SDK/page-library pull-in.
+  { outfile: 'dist/mainWorld.js', budgetBytes: 5.5 * 1024, label: 'mainWorld.js' },
   // The Albedo entry includes the popup-specific interception implementation plus the
   // closed-set protection heartbeat. Keep the budget tight enough to detect SDK or
   // page-library regressions; the Stellar SDK must remain background-only.
-  { outfile: 'dist/albedoMainWorld.js', budgetBytes: 6 * 1024, label: 'albedoMainWorld.js' },
+  // Raised from 6.00 KB for the same shared requestOutcome.ts helper as mainWorld.js.
+  { outfile: 'dist/albedoMainWorld.js', budgetBytes: 6.5 * 1024, label: 'albedoMainWorld.js' },
   // The isolated bridge owns the versioned handshake and strict message validation.
-  { outfile: 'dist/bridge.js', budgetBytes: 4 * 1024, label: 'bridge.js' },
+  // Raised from 4.00 KB: the bridge now runs the SIGN_REQUEST -> SIGN_ACK -> AWAIT_OUTCOME
+  // resume/retry loop (awaitOutcome.ts) instead of a single blocking sendMessage callback,
+  // so it can survive a worker restart mid-review. Still well under mainWorld's budget.
+  { outfile: 'dist/bridge.js', budgetBytes: 5.5 * 1024, label: 'bridge.js' },
 ]
 
 function formatBytes(bytes) {

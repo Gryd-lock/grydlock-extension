@@ -3,6 +3,7 @@ import {
   MAX_NETWORK_PASSPHRASE_LENGTH,
   MAX_REQUEST_ID_LENGTH,
   MAX_XDR_LENGTH,
+  isRuntimeAwaitOutcomeMessage,
   isRuntimeDecisionMadeMessage,
   isRuntimeProtectionAdapterStatusMessage,
   isRuntimeProtectionBridgeOnlineMessage,
@@ -17,27 +18,42 @@ describe('isRuntimeSignRequestMessage', () => {
     expect(
       isRuntimeSignRequestMessage({
         type: 'SIGN_REQUEST',
-        requestId: 'req-1',
+        protocolVersion: 1,
         xdr: 'AAAAAg==',
+        adapter: 'freighter',
       }),
     ).toBe(true)
 
     expect(
       isRuntimeSignRequestMessage({
         type: 'SIGN_REQUEST',
-        requestId: 'req-2',
+        protocolVersion: 1,
         xdr: 'AAAAAg==',
+        adapter: 'albedo-popup',
         networkPassphrase: 'Test SDF Network ; September 2015',
       }),
     ).toBe(true)
+  })
+
+  it('has no requestId field at all — the page/bridge boundary correlation id never reaches this message', () => {
+    expect(
+      isRuntimeSignRequestMessage({
+        type: 'SIGN_REQUEST',
+        protocolVersion: 1,
+        xdr: 'AAAAAg==',
+        adapter: 'freighter',
+        requestId: 'page-supplied-id',
+      }),
+    ).toBe(false)
   })
 
   it('accepts values exactly at each explicit size limit', () => {
     expect(
       isRuntimeSignRequestMessage({
         type: 'SIGN_REQUEST',
-        requestId: 'r'.repeat(MAX_REQUEST_ID_LENGTH),
+        protocolVersion: 1,
         xdr: 'A'.repeat(MAX_XDR_LENGTH),
+        adapter: 'freighter',
         networkPassphrase: 'n'.repeat(MAX_NETWORK_PASSPHRASE_LENGTH),
       }),
     ).toBe(true)
@@ -50,22 +66,40 @@ describe('isRuntimeSignRequestMessage', () => {
     [],
     {},
     { type: 'SIGN_REQUEST' },
-    { type: 'SIGN_REQUEST', requestId: 'req-1' },
-    { type: 'SIGN_REQUEST', requestId: 1, xdr: 'AAAAAg==' },
-    { type: 'SIGN_REQUEST', requestId: 'req-1', xdr: 1 },
-    { type: 'SIGN_REQUEST', requestId: 'req-1', xdr: 'AAAAAg==', networkPassphrase: 1 },
-    { type: 'OTHER', requestId: 'req-1', xdr: 'AAAAAg==' },
+    { type: 'SIGN_REQUEST', protocolVersion: 1 },
+    { type: 'SIGN_REQUEST', protocolVersion: '1', xdr: 'AAAAAg==', adapter: 'freighter' },
+    { type: 'SIGN_REQUEST', protocolVersion: 1, xdr: 1, adapter: 'freighter' },
+    { type: 'SIGN_REQUEST', protocolVersion: 1, xdr: 'AAAAAg==', adapter: 'metamask' },
+    { type: 'SIGN_REQUEST', protocolVersion: 1, xdr: 'AAAAAg==', adapter: undefined },
+    {
+      type: 'SIGN_REQUEST',
+      protocolVersion: 1,
+      xdr: 'AAAAAg==',
+      adapter: 'freighter',
+      networkPassphrase: 1,
+    },
+    { type: 'OTHER', protocolVersion: 1, xdr: 'AAAAAg==', adapter: 'freighter' },
   ])('rejects malformed values %#', (message) => {
     expect(isRuntimeSignRequestMessage(message)).toBe(false)
   })
 
   it.each([
-    { type: 'SIGN_REQUEST', requestId: '', xdr: 'AAAAAg==' },
-    { type: 'SIGN_REQUEST', requestId: '   ', xdr: 'AAAAAg==' },
-    { type: 'SIGN_REQUEST', requestId: 'req-1', xdr: '' },
-    { type: 'SIGN_REQUEST', requestId: 'req-1', xdr: '   ' },
-    { type: 'SIGN_REQUEST', requestId: 'req-1', xdr: 'AAAAAg==', networkPassphrase: '' },
-    { type: 'SIGN_REQUEST', requestId: 'req-1', xdr: 'AAAAAg==', networkPassphrase: '   ' },
+    { type: 'SIGN_REQUEST', protocolVersion: 1, xdr: '', adapter: 'freighter' },
+    { type: 'SIGN_REQUEST', protocolVersion: 1, xdr: '   ', adapter: 'freighter' },
+    {
+      type: 'SIGN_REQUEST',
+      protocolVersion: 1,
+      xdr: 'AAAAAg==',
+      adapter: 'freighter',
+      networkPassphrase: '',
+    },
+    {
+      type: 'SIGN_REQUEST',
+      protocolVersion: 1,
+      xdr: 'AAAAAg==',
+      adapter: 'freighter',
+      networkPassphrase: '   ',
+    },
   ])('rejects empty required or supplied strings %#', (message) => {
     expect(isRuntimeSignRequestMessage(message)).toBe(false)
   })
@@ -73,22 +107,38 @@ describe('isRuntimeSignRequestMessage', () => {
   it.each([
     {
       type: 'SIGN_REQUEST',
-      requestId: 'r'.repeat(MAX_REQUEST_ID_LENGTH + 1),
-      xdr: 'AAAAAg==',
-    },
-    {
-      type: 'SIGN_REQUEST',
-      requestId: 'req-1',
+      protocolVersion: 1,
       xdr: 'A'.repeat(MAX_XDR_LENGTH + 1),
+      adapter: 'freighter',
     },
     {
       type: 'SIGN_REQUEST',
-      requestId: 'req-1',
+      protocolVersion: 1,
       xdr: 'AAAAAg==',
+      adapter: 'freighter',
       networkPassphrase: 'n'.repeat(MAX_NETWORK_PASSPHRASE_LENGTH + 1),
     },
   ])('rejects values over each explicit size limit %#', (message) => {
     expect(isRuntimeSignRequestMessage(message)).toBe(false)
+  })
+})
+
+describe('isRuntimeAwaitOutcomeMessage', () => {
+  it('accepts a bounded, closed-set resume/status request', () => {
+    expect(isRuntimeAwaitOutcomeMessage({ type: 'AWAIT_OUTCOME', requestId: 'req-1' })).toBe(true)
+  })
+
+  it.each([
+    null,
+    undefined,
+    {},
+    { type: 'AWAIT_OUTCOME' },
+    { type: 'AWAIT_OUTCOME', requestId: '' },
+    { type: 'AWAIT_OUTCOME', requestId: 1 },
+    { type: 'AWAIT_OUTCOME', requestId: 'req-1', xdr: 'extra' },
+    { type: 'AWAIT_OUTCOME', requestId: 'r'.repeat(MAX_REQUEST_ID_LENGTH + 1) },
+  ])('rejects malformed values %#', (message) => {
+    expect(isRuntimeAwaitOutcomeMessage(message)).toBe(false)
   })
 })
 
@@ -161,6 +211,7 @@ describe('isRuntimeDecisionMadeMessage', () => {
     expect(
       isRuntimeDecisionMadeMessage({
         type: 'DECISION_MADE',
+        protocolVersion: 1,
         requestId: 'req-1',
         decision,
       }),
@@ -172,14 +223,16 @@ describe('isRuntimeDecisionMadeMessage', () => {
     undefined,
     [],
     {},
-    { type: 'DECISION_MADE' },
-    { type: 'DECISION_MADE', requestId: 'req-1' },
-    { type: 'DECISION_MADE', requestId: 1, decision: 'proceed' },
-    { type: 'DECISION_MADE', requestId: '', decision: 'proceed' },
-    { type: 'DECISION_MADE', requestId: 'req-1', decision: 'allow' },
-    { type: 'DECISION_MADE', requestId: 'req-1', decision: 1 },
+    { type: 'DECISION_MADE', protocolVersion: 1 },
+    { type: 'DECISION_MADE', protocolVersion: 1, requestId: 'req-1' },
+    { type: 'DECISION_MADE', protocolVersion: 2, requestId: 'req-1', decision: 'proceed' },
+    { type: 'DECISION_MADE', protocolVersion: 1, requestId: 1, decision: 'proceed' },
+    { type: 'DECISION_MADE', protocolVersion: 1, requestId: '', decision: 'proceed' },
+    { type: 'DECISION_MADE', protocolVersion: 1, requestId: 'req-1', decision: 'allow' },
+    { type: 'DECISION_MADE', protocolVersion: 1, requestId: 'req-1', decision: 1 },
     {
       type: 'DECISION_MADE',
+      protocolVersion: 1,
       requestId: 'r'.repeat(MAX_REQUEST_ID_LENGTH + 1),
       decision: 'cancel',
     },
@@ -190,12 +243,27 @@ describe('isRuntimeDecisionMadeMessage', () => {
 
 describe('isRuntimeReviewRequestMessage', () => {
   it('accepts only the bounded, closed-set popup review request', () => {
-    expect(isRuntimeReviewRequestMessage({ type: 'GET_REVIEW', requestId: 'req-1' })).toBe(true)
-    expect(isRuntimeReviewRequestMessage({ type: 'GET_REVIEW', requestId: 'req-1', xdr: 'secret' })).toBe(false)
-    expect(isRuntimeReviewRequestMessage({ type: 'GET_REVIEW', requestId: '' })).toBe(false)
+    expect(
+      isRuntimeReviewRequestMessage({ type: 'GET_REVIEW', protocolVersion: 1, requestId: 'req-1' }),
+    ).toBe(true)
     expect(
       isRuntimeReviewRequestMessage({
         type: 'GET_REVIEW',
+        protocolVersion: 1,
+        requestId: 'req-1',
+        xdr: 'secret',
+      }),
+    ).toBe(false)
+    expect(
+      isRuntimeReviewRequestMessage({ type: 'GET_REVIEW', protocolVersion: 2, requestId: 'req-1' }),
+    ).toBe(false)
+    expect(
+      isRuntimeReviewRequestMessage({ type: 'GET_REVIEW', protocolVersion: 1, requestId: '' }),
+    ).toBe(false)
+    expect(
+      isRuntimeReviewRequestMessage({
+        type: 'GET_REVIEW',
+        protocolVersion: 1,
         requestId: 'r'.repeat(MAX_REQUEST_ID_LENGTH + 1),
       }),
     ).toBe(false)

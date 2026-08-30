@@ -5,7 +5,7 @@ import DevScoreSlider from './DevScoreSlider'
 import TierWarning from './TierWarning'
 import TrustedAddressesManager from './TrustedAddressesManager'
 import ProtectionStatusPanel from './ProtectionStatus'
-import type { RuntimeDecisionMadeMessage } from '../intercept/protocol'
+import { SIGN_PROTOCOL_VERSION, type RuntimeDecisionMadeMessage } from '../intercept/protocol'
 import type { AggregatedReview } from '../review/model'
 import { tierForReviewSeverity } from '../review/policy'
 import './App.css'
@@ -23,12 +23,6 @@ type PreviewState =
   | 'critical'
   | 'dev-slider'
   | 'review'
-
-interface DestinationRow {
-  destination: string
-  asset?: string
-  score: number
-}
 
 const REVIEW_PREVIEW: AggregatedReview = {
   severity: 'high',
@@ -147,46 +141,78 @@ function PreviewView({ preview }: { preview: PreviewState }) {
   )
 }
 
+type ReviewLoadState = 'loading' | 'unavailable' | { review: AggregatedReview }
+
+/**
+ * Fails closed when review data cannot be loaded (e.g. a worker restart
+ * mid-review lost the in-memory content, or this popup's window doesn't
+ * match the request's bound review window) instead of falling back to a
+ * URL-supplied score. That fallback used to default to a reassuring 'low'
+ * tier via a always-empty destinations/score URL param, silently
+ * misrepresenting an indeterminate review as low risk — the one thing this
+ * warning exists to never do.
+ */
 function InterceptView({ params }: { params: URLSearchParams }) {
   const requestId = params.get('requestId') ?? ''
-  const destinationsJson = params.get('destinations')
-  const score = Number(params.get('score') ?? '0')
-  const tier = tierForScore(score)
-  const [review, setReview] = useState<AggregatedReview | undefined>()
+  const canFetchReview = Boolean(requestId && chrome?.runtime?.sendMessage)
+  const [reviewState, setReviewState] = useState<ReviewLoadState>(
+    canFetchReview ? 'loading' : 'unavailable',
+  )
 
   useEffect(() => {
-    if (!requestId || !chrome?.runtime?.sendMessage) return
-    chrome.runtime.sendMessage({ type: 'GET_REVIEW', requestId }, (response: { review?: AggregatedReview } | undefined) => {
-      if (response?.review) setReview(response.review)
-    })
-  }, [requestId])
-
-  let destinations: DestinationRow[] = []
-  if (destinationsJson) {
-    try {
-      destinations = JSON.parse(destinationsJson)
-    } catch {
-      destinations = []
+    if (!canFetchReview) return
+    let cancelled = false
+    chrome.runtime.sendMessage(
+      { type: 'GET_REVIEW', protocolVersion: SIGN_PROTOCOL_VERSION, requestId },
+      (response: { review?: AggregatedReview } | undefined) => {
+        if (cancelled) return
+        setReviewState(response?.review ? { review: response.review } : 'unavailable')
+      },
+    )
+    return () => {
+      cancelled = true
     }
-  } else {
-    const destination = params.get('destination') ?? ''
-    const asset = params.get('asset') ?? undefined
-    if (destination) {
-      destinations = [{ destination, asset, score }]
-    }
-  }
+  }, [canFetchReview, requestId])
 
   function respond(decision: 'proceed' | 'cancel') {
-    const message: RuntimeDecisionMadeMessage = { type: 'DECISION_MADE', requestId, decision }
+    const message: RuntimeDecisionMadeMessage = {
+      type: 'DECISION_MADE',
+      protocolVersion: SIGN_PROTOCOL_VERSION,
+      requestId,
+      decision,
+    }
     chrome.runtime.sendMessage(message)
     window.close()
   }
 
+  if (reviewState === 'loading') {
+    return <div className="popup">Checking destination…</div>
+  }
+
+  if (reviewState === 'unavailable') {
+    return (
+      <div className="popup">
+        <p className="message">
+          This request could not be loaded for review. For your safety, reject it and retry from
+          the dApp.
+        </p>
+        <button className="cancel" type="button" onClick={() => respond('cancel')}>
+          Reject
+        </button>
+      </div>
+    )
+  }
+
+  const { review } = reviewState
+  const tier = tierForScore(
+    { low: 10, elevated: 35, high: 60, critical: 85 }[tierForReviewSeverity(review.severity)],
+  )
+  const score = { info: 10, warning: 35, high: 60, critical: 85 }[review.severity]
+
   return (
     <TierWarning
-      tier={review ? tierForScore({ low: 10, elevated: 35, high: 60, critical: 85 }[tierForReviewSeverity(review.severity)]) : tier}
-      score={review ? { info: 10, warning: 35, high: 60, critical: 85 }[review.severity] : score}
-      destinations={destinations}
+      tier={tier}
+      score={score}
       review={review}
       onCancel={() => respond('cancel')}
       onProceed={() => respond('proceed')}
