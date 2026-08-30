@@ -58,7 +58,7 @@ describe('resolveOutcome', () => {
   })
 
   describe('oracle failure', () => {
-    it('calls requestDecision with fallback score -1 when getScore rejects', async () => {
+    it('calls requestDecision with an invalid score when getScore rejects so it is never low risk', async () => {
       const requestDecision = vi.fn().mockResolvedValue('cancel')
 
       await resolveOutcome('some-xdr', {
@@ -69,11 +69,10 @@ describe('resolveOutcome', () => {
         requestDecision,
       })
 
-      // Must reach requestDecision (not hang or throw) and pass fallback score.
       expect(requestDecision).toHaveBeenCalledWith({
         destinations: [{ destination: 'GDEST', asset: 'USD:GISSUER' }],
-        scores: [{ destination: 'GDEST', asset: 'USD:GISSUER', score: -1 }],
-        worstScore: -1,
+        scores: [{ destination: 'GDEST', asset: 'USD:GISSUER', score: Number.NaN }],
+        worstScore: Number.NaN,
       })
     })
 

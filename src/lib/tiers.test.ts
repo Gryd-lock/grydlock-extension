@@ -44,9 +44,10 @@ describe('tierForScore', () => {
     expect(tierForScore(100).tier).toBe('critical')
   })
 
-  it('clamps out-of-range scores', () => {
-    expect(tierForScore(-5).tier).toBe('low')
-    expect(tierForScore(150).tier).toBe('critical')
+  it('marks out-of-range or invalid scores as unscored', () => {
+    expect(tierForScore(-5).tier).toBe('unscored')
+    expect(tierForScore(150).tier).toBe('unscored')
+    expect(tierForScore(Number.NaN).tier).toBe('unscored')
   })
 })
 
