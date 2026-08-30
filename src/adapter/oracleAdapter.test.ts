@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { tierForScore } from '../lib/tiers'
 import { getScore } from './oracleAdapter'
 
 describe('getScore', () => {
@@ -23,4 +24,10 @@ describe('getScore', () => {
     expect(result).toBe(-1);
     vi.useRealTimers();
   });
+
+  it('treats invalid score values as unscored instead of low risk', () => {
+    expect(tierForScore(-1).tier).toBe('unscored')
+    expect(tierForScore(Number.NaN).tier).toBe('unscored')
+    expect(tierForScore(101).tier).toBe('unscored')
+  })
 });

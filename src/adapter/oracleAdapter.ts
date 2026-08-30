@@ -1,8 +1,6 @@
 import { DEFAULT_GET_SCORE_TIMEOUT_MS } from './config';
+import { isValidScore } from '../lib/tiers';
 
-/**
- * Simple in-memory LRU cache with TTL for score values.
- */
 class ScoreCache {
   private maxSize: number;
   private ttlMs: number;
@@ -21,7 +19,6 @@ class ScoreCache {
       this.map.delete(key);
       return undefined;
     }
-    // Refresh LRU order
     this.map.delete(key);
     this.map.set(key, entry);
     return entry.value;
@@ -33,45 +30,43 @@ class ScoreCache {
       const oldestKey = this.map.keys().next().value;
       if (oldestKey !== undefined) this.map.delete(oldestKey);
     }
-    const expiresAt = Date.now() + this.ttlMs;
-    this.map.set(key, { value, expiresAt });
+    this.map.set(key, { value, expiresAt: Date.now() + this.ttlMs });
   }
 }
 
-// Default cache configuration
-const DEFAULT_TTL_MS = 180_000; // 3 minutes
+const DEFAULT_TTL_MS = 180_000;
 const DEFAULT_MAX_CACHE_SIZE = 100;
-
-/** Global cache instance used by getScore */
 const scoreCache = new ScoreCache(DEFAULT_MAX_CACHE_SIZE, DEFAULT_TTL_MS);
+const inFlightScores = new Map<string, Promise<number>>();
 
-/** Helper: sleep for ms */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Jittered backoff delay */
 function jitter(base: number): number {
   const min = base / 2;
   const max = base * 1.5;
   return Math.random() * (max - min) + min;
 }
 
-/** Generic retry with exponential backoff and jitter. */
 async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
+  fn: (signal?: AbortSignal) => Promise<T>,
   attempts: number,
   baseDelayMs: number,
+  signal?: AbortSignal,
 ): Promise<T> {
   let attempt = 0;
   while (true) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     try {
-      return await fn();
+      return await fn(signal);
     } catch (e) {
+      if (signal?.aborted) throw e;
       attempt++;
       if (attempt > attempts) throw e;
       const delay = Math.pow(2, attempt - 1) * baseDelayMs + jitter(baseDelayMs);
       await sleep(delay);
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     }
   }
 }
@@ -151,17 +146,23 @@ export const circuitBreaker = new CircuitBreaker(5, 60_000, 30_000);
 /**
  * Core score fetching logic (stub). Extracted for testing and cache usage.
  */
-export async function fetchScore(destination: string): Promise<number> {
-  // Simulate async work (the existing stub delay).
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  return stubScoreFor(destination);
+export async function fetchScore(destination: string, options?: { signal?: AbortSignal }): Promise<number> {
+  if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+  await new Promise<void>((resolve, reject) => {
+    const id = setTimeout(resolve, 150);
+    const onAbort = () => {
+      clearTimeout(id);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    options?.signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
+  const score = stubScoreFor(destination);
+  if (!isValidScore(score)) throw new Error('Oracle returned an invalid score');
+  return score;
 }
 
-/**
- * Retrieves a risk score for a destination with a configurable timeout.
- * If the operation exceeds the timeout, it resolves with a fallback score of -1.
- * Supports in‑memory caching with optional bypass.
- */
 export async function getScore(
   destination: string,
   options?: { timeoutMs?: number; signal?: AbortSignal; bypassCache?: boolean },
@@ -174,33 +175,48 @@ export async function getScore(
     if (cached !== undefined) return cached;
   }
 
-  const controller = new AbortController();
-  const combinedSignal = options?.signal ?? controller.signal;
+  const existing = inFlightScores.get(destination);
+  if (existing) return await existing;
 
-  // Timeout handling
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    const id = setTimeout(() => {
-      controller.abort();
-      reject(new Error('Timeout'));
-    }, timeoutMs);
-    combinedSignal.addEventListener('abort', () => clearTimeout(id));
+  const controller = new AbortController();
+  const combinedSignal = options?.signal
+    ? ('any' in AbortSignal ? AbortSignal.any([options.signal, controller.signal]) : options.signal)
+    : controller.signal;
+
+  const request = circuitBreaker.exec(async () => {
+    const score = await retryWithBackoff(
+      async (signal) => fetchScore(destination, { signal }),
+      2,
+      200,
+      combinedSignal,
+    );
+    if (!isValidScore(score)) throw new Error('Oracle returned an invalid score');
+    scoreCache.set(destination, score);
+    return score;
+  }, -1).catch((error) => {
+    if (combinedSignal.aborted || options?.signal?.aborted) throw error;
+    return -1;
   });
 
-  const fetchFn = () => fetchScore(destination);
-  // Wrap fetch with retry logic (max 2 retries, base 200ms)
-  const scorePromise = retryWithBackoff(fetchFn, 2, 200);
+  inFlightScores.set(destination, request);
 
-  // Execute with circuit breaker, fallback -1 on open
-  return await circuitBreaker.exec(async () => {
-    const result = await Promise.race([scorePromise, timeoutPromise]);
-    // Cache successful result
-    scoreCache.set(destination, result as number);
-    return result as number;
-  }, -1).catch(() => -1);
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const id = setTimeout(() => {
+        controller.abort();
+        reject(new DOMException('Timeout', 'TimeoutError'));
+      }, timeoutMs);
+      combinedSignal.addEventListener('abort', () => clearTimeout(id), { once: true });
+    });
+
+    return await Promise.race([request, timeoutPromise]);
+  } catch {
+    return -1;
+  } finally {
+    inFlightScores.delete(destination);
+  }
 }
 
-
-/** Simple deterministic stub used by the current implementation. */
 function stubScoreFor(destination: string): number {
   let hash = 0;
   for (let i = 0; i < destination.length; i++) {

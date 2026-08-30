@@ -60,10 +60,19 @@ export default function ProtectionStatusPanel() {
   const refresh = async () => {
     try {
       const tabId = await activeTabId()
+      if (!chrome?.runtime?.sendMessage) {
+        setSnapshot({ ...initialSnapshot, status: 'worker-unavailable' })
+        return
+      }
+
       chrome.runtime.sendMessage(
         { type: 'GET_PROTECTION_STATUS', tabId },
-        (response: ProtectionSnapshot) => {
-          if (chrome.runtime.lastError || !response || !STATUS_COPY[response.status]) {
+        (response?: ProtectionSnapshot) => {
+          if (chrome.runtime.lastError) {
+            setSnapshot({ ...initialSnapshot, status: 'worker-unavailable' })
+            return
+          }
+          if (!response || !STATUS_COPY[response.status]) {
             setSnapshot({ ...initialSnapshot, status: 'worker-unavailable' })
             return
           }
@@ -76,10 +85,13 @@ export default function ProtectionStatusPanel() {
   }
 
   useEffect(() => {
-    const initial = window.setTimeout(() => void refresh(), 0)
-    const interval = window.setInterval(() => void refresh(), 5_000)
+    const tick = () => {
+      void refresh()
+    }
+
+    tick()
+    const interval = window.setInterval(tick, 5_000)
     return () => {
-      window.clearTimeout(initial)
       window.clearInterval(interval)
     }
   }, [])

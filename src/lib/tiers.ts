@@ -75,8 +75,12 @@ export const UNSCORED_TIER_INFO: TierInfo = {
   message: "Couldn't reach the risk oracle. Proceed only if you fully trust this destination.",
 }
 
+export function isValidScore(score: number): score is number {
+  return Number.isFinite(score) && Number.isInteger(score) && score >= 0 && score <= 100
+}
+
 export function tierForScore(score: number): TierInfo {
-  const clamped = Math.max(0, Math.min(100, score))
-  const match = TIERS.find(({ max }) => clamped <= max)
-  return match!.info
+  if (!isValidScore(score)) return UNSCORED_TIER_INFO
+  const match = TIERS.find(({ max }) => score <= max)
+  return match ? match.info : UNSCORED_TIER_INFO
 }

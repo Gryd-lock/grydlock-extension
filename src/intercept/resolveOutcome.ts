@@ -53,20 +53,25 @@ export async function resolveReviewOutcome(
   return deps.requestDecision(aggregateReview(review, evidence))
 }
 
-function tierForScore(score: number): 'low' | 'elevated' | 'high' | 'critical' {
+function tierForScore(score: number): 'low' | 'elevated' | 'high' | 'critical' | 'unknown' {
+  if (!Number.isFinite(score) || !Number.isInteger(score) || score < 0 || score > 100) return 'unknown'
   return score <= 20 ? 'low' : score <= 50 ? 'elevated' : score <= 75 ? 'high' : 'critical'
 }
 
 function tierOrder(tier: string): number {
   switch (tier) {
     case 'critical':
-      return 4
+      return 5
     case 'high':
-      return 3
+      return 4
     case 'elevated':
+      return 3
+    case 'low':
       return 2
-    default:
+    case 'unknown':
       return 1
+    default:
+      return 0
   }
 }
 
@@ -91,7 +96,7 @@ export async function resolveOutcome(
 
   const scores = await Promise.all(
     decoded.destinations.map(async ({ destination, asset }) => {
-      const score = await deps.getScore(destination).catch(() => -1)
+      const score = await deps.getScore(destination).catch(() => Number.NaN)
       return { destination, asset, score }
     }),
   )
