@@ -1,5 +1,5 @@
-import { WINDOW_REQUEST_TYPE, WINDOW_RESPONSE_TYPE, type Outcome } from './protocol'
 import { reportAdapterStatus, startProtectionHeartbeat } from './protectionHandshake'
+import { requestOutcome } from './requestOutcome'
 
 /**
  * Real Freighter (`@stellar/freighter-api`) does not expose a callable
@@ -23,23 +23,6 @@ interface FreighterSubmitTransactionRequest {
   networkPassphrase?: string
   accountToSign?: string
   __grydlockReviewed?: boolean
-}
-
-function requestOutcome(xdr: string, networkPassphrase?: string): Promise<Outcome> {
-  const localId = crypto.randomUUID()
-
-  return new Promise((resolve) => {
-    function onMessage(event: MessageEvent) {
-      if (event.source !== window) return
-      const data = event.data as { type?: string; localId?: string; outcome?: string } | undefined
-      if (data?.type !== WINDOW_RESPONSE_TYPE || data.localId !== localId) return
-      window.removeEventListener('message', onMessage)
-      const outcome = data.outcome
-      resolve(outcome === 'proceed' || outcome === 'allow' ? outcome : 'cancel')
-    }
-    window.addEventListener('message', onMessage)
-    window.postMessage({ type: WINDOW_REQUEST_TYPE, localId, xdr, networkPassphrase }, '*')
-  })
 }
 
 /**
@@ -76,7 +59,7 @@ window.addEventListener(
     const request = data as FreighterSubmitTransactionRequest
     const networkPassphrase = request.networkPassphrase ?? request.network
 
-    requestOutcome(request.transactionXdr, networkPassphrase).then((outcome) => {
+    requestOutcome(request.transactionXdr, networkPassphrase, 'freighter').then((outcome) => {
       if (outcome === 'cancel') {
         window.postMessage(
           {

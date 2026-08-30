@@ -56,6 +56,9 @@ export const DIAGNOSTIC_EVENTS = [
   'protection.handshake.success',
   'protection.handshake.failure',
   'protection.permission.changed',
+  'signing.request.admission_rejected',
+  'signing.review.window_mismatch',
+  'signing.decision.window_mismatch',
 ] as const
 
 export type DiagnosticEvent = (typeof DIAGNOSTIC_EVENTS)[number]
