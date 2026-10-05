@@ -13,15 +13,18 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --config=playwright.e2e.config.ts",
+    "test:contracts": "vitest run src/tests/walletContracts.test.ts",
+    "test:all": "vitest run && npm run test:contracts",
     "test:visual": "playwright test tests/visual --project=chromium",
     "lint": "eslint .",
     "format": "prettier --write .",
     "visual:serve": "vite --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "16.0.1",
+    "@stellar/stellar-sdk": "^16.2.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -33,8 +36,8 @@
     "@types/jest-axe": "^3.5.9",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@vitejs/plugin-react": "^6.1.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "^0.28.1",
     "eslint": "^10.8.1",
     "eslint-config-prettier": "^10.1.8",
@@ -47,8 +50,8 @@
     "prettier": "^3.9.6",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.67.0",
-    "vite": "^5.4.0",
-    "vite-plugin-static-copy": "^1.0.6",
-    "vitest": "^2.0.5"
+    "vite": "^8.2.2",
+    "vite-plugin-static-copy": "^4.1.1",
+    "vitest": "^4.1.11"
   }
 }
