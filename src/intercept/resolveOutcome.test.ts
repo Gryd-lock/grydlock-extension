@@ -110,6 +110,28 @@ describe('resolveOutcome', () => {
 
       expect(outcome).toBe('cancel')
     })
+    it('ranks unknown (-1) oracle failure higher than low-risk destinations in worstScore', async () => {
+      const requestDecision = vi.fn().mockResolvedValue('proceed')
+
+      await resolveOutcome('some-xdr', {
+        extractDestination: () => ({
+          destinations: [
+            { destination: 'GLOW', asset: 'USD:GISSUER' },
+            { destination: 'GFAIL' },
+          ],
+        }),
+        getScore: vi.fn()
+          .mockResolvedValueOnce(15)
+          .mockRejectedValueOnce(new Error('oracle failure')),
+        requestDecision,
+      })
+
+      expect(requestDecision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          worstScore: -1,
+        }),
+      )
+    })
   })
 })
 
@@ -190,6 +212,28 @@ describe('resolveReviewOutcome', () => {
       type: 'account',
       value: 'GACCOUNT',
       networkPassphrase: 'Custom Network',
+    })
+    it('ranks unknown (-1) oracle failure higher than low-risk destinations in worstScore', async () => {
+      const requestDecision = vi.fn().mockResolvedValue('proceed')
+
+      await resolveOutcome('some-xdr', {
+        extractDestination: () => ({
+          destinations: [
+            { destination: 'GLOW', asset: 'USD:GISSUER' },
+            { destination: 'GFAIL' },
+          ],
+        }),
+        getScore: vi.fn()
+          .mockResolvedValueOnce(15)
+          .mockRejectedValueOnce(new Error('oracle failure')),
+        requestDecision,
+      })
+
+      expect(requestDecision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          worstScore: -1,
+        }),
+      )
     })
   })
 })
