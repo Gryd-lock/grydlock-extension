@@ -4,3 +4,4 @@ coverage/
 *.tsbuildinfo
 test-results/
 tests/visual/popup.spec.ts-snapshots/*-chromium-darwin.png
+config.bat

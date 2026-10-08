@@ -71,20 +71,27 @@ export async function resolveReviewOutcome(
   return deps.requestDecision(review)
 }
 
-function tierForScore(score: number): 'low' | 'elevated' | 'high' | 'critical' {
+export type RiskTier = 'unknown' | 'low' | 'elevated' | 'high' | 'critical'
+
+export function tierForScore(score: number): RiskTier {
+  if (score < 0 || !Number.isFinite(score)) return 'unknown'
   return score <= 20 ? 'low' : score <= 50 ? 'elevated' : score <= 75 ? 'high' : 'critical'
 }
 
-function tierOrder(tier: string): number {
+export function tierOrder(tier: string): number {
   switch (tier) {
     case 'critical':
-      return 4
+      return 5
     case 'high':
+      return 4
+    case 'unknown':
       return 3
     case 'elevated':
       return 2
-    default:
+    case 'low':
       return 1
+    default:
+      return 0
   }
 }
 
