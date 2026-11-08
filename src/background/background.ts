@@ -1,4 +1,9 @@
-import { getScore } from '../adapter/oracleAdapter'
+import {
+  DEFAULT_ORACLE_SOURCE,
+  createRiskOracle,
+  lookupScore,
+  type OracleSourceConfig,
+} from '../adapter/oracleAdapter'
 import {
   clearDiagnostics,
   exportDiagnostics,
@@ -20,7 +25,8 @@ import type {
 } from '../intercept/protocol'
 import type { AggregatedReview } from '../review/model'
 import { recordDecision } from '../lib/history'
-import { tierForScore } from '../lib/tiers'
+import { tierForScore, tierInfoFor } from '../lib/tiers'
+import { displayTier } from '../review/policy'
 import {
   isRuntimeAwaitOutcomeMessage,
   isRuntimeDecisionMadeMessage,
@@ -441,17 +447,9 @@ function clearBadgeIfIdle() {
   }
 }
 
-function scoreForSeverity(severity: AggregatedReview['severity']): number {
-  switch (severity) {
-    case 'critical':
-      return 85
-    case 'high':
-      return 60
-    case 'warning':
-      return 35
-    default:
-      return 10
-  }
+/** The oracle source in effect. Settings wiring replaces this in a later step. */
+async function currentOracleSource(): Promise<OracleSourceConfig> {
+  return DEFAULT_ORACLE_SOURCE
 }
 
 /**
@@ -547,12 +545,16 @@ function handleSignRequest(
       respondOnce({ type: 'SIGN_ACK', requestId, deadlineAt: record.deadlineAt })
 
       transitionPendingRequest(requestId, 'validating')
+      const oracleSource = await currentOracleSource()
+      const oracle = createRiskOracle(oracleSource)
       const review = await buildAggregatedReview(
         message.xdr,
-        // The current local adapter only accepts account strings. Keep that
-        // projection here, after the review engine has enforced a typed,
-        // network-scoped account target.
-        { getScore: (target) => getScore(target.value) },
+        {
+          oracleSource: oracleSource.kind,
+          // Only network-scoped account targets reach here (the review engine
+          // enforces that); the oracle receives the bare account string.
+          lookupScore: oracle ? (target) => lookupScore(oracle, target.value) : undefined,
+        },
         message.networkPassphrase,
       )
 
@@ -570,8 +572,7 @@ function handleSignRequest(
       const entry = pendingSignRequests.get(requestId)
       if (entry) entry.review = review
 
-      const score = scoreForSeverity(review.severity)
-      const tierInfo = tierForScore(score)
+      const tierInfo = tierInfoFor(displayTier(review))
       chrome.action.setBadgeText({ text: '!' })
       chrome.action.setBadgeBackgroundColor({ color: tierInfo.colour })
 

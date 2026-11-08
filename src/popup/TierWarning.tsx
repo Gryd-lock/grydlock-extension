@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import type { TierInfo } from '../lib/tiers'
-import type { AggregatedReview } from '../review/model'
+import type { AggregatedReview, OracleSourceKind, TargetEvidence } from '../review/model'
 
 interface DestinationRow {
   destination: string
@@ -11,12 +11,33 @@ interface DestinationRow {
 
 interface TierWarningProps {
   tier: TierInfo
-  score: number
+  /** Synthetic score for previews/dev only. Real reviews show per-destination evidence instead. */
+  score?: number
   destinations?: DestinationRow[]
   onCancel: () => void
   onProceed: () => void
   devControl?: ReactNode
   review?: AggregatedReview
+}
+
+const SOURCE_LABELS: Record<OracleSourceKind, string> = {
+  off: 'scoring off',
+  'testkit-fixtures': 'testkit fixtures',
+  soroban: 'Soroban oracle',
+}
+
+function evidenceText(item: TargetEvidence, source: OracleSourceKind | undefined): string {
+  const via = source ? SOURCE_LABELS[source] : 'oracle'
+  switch (item.status) {
+    case 'available':
+      return `Score ${item.score} / 100 (${via})`
+    case 'unscored':
+      return `No score in ${via}`
+    case 'unavailable':
+      return `Assessment unavailable (${via} did not answer)`
+    case 'not-configured':
+      return 'Not scored — destination scoring is off in settings'
+  }
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -141,6 +162,20 @@ export default function TierWarning({
               </ul>
             </div>
           )}
+          {review.evidence.length > 0 && (
+            <>
+              <h2>Destination assessment</h2>
+              <ul className="evidence" aria-label="Destination assessment">
+                {review.evidence.map((item) => (
+                  <li key={`${item.target.type}:${item.target.value}`} data-status={item.status}>
+                    <span className="destination">{item.target.value}</span>
+                    {item.target.asset ? ` (${item.target.asset})` : ''} —{' '}
+                    {evidenceText(item, review.oracleSource)}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <h2>Operations (in signing order)</h2>
           <ol className="operations">
             {review.review.operations.map((operation) => (
@@ -171,7 +206,7 @@ export default function TierWarning({
           ))}
         </ul>
       )}
-      <p className="score">Score: {score}</p>
+      {score !== undefined && <p className="score">Score: {score}</p>}
       <p className="message">{tier.message}</p>
       {devControl}
       {requiresHighConfirmation && (

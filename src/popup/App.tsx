@@ -1,19 +1,17 @@
 import { useEffect, useState } from 'react'
-import { getScore } from '../adapter/oracleAdapter'
-import { tierForScore } from '../lib/tiers'
+import { tierForScore, tierInfoFor } from '../lib/tiers'
 import DevScoreSlider from './DevScoreSlider'
 import TierWarning from './TierWarning'
 import TrustedAddressesManager from './TrustedAddressesManager'
 import ProtectionStatusPanel from './ProtectionStatus'
 import { SIGN_PROTOCOL_VERSION, type RuntimeDecisionMadeMessage } from '../intercept/protocol'
 import type { AggregatedReview } from '../review/model'
-import { tierForReviewSeverity } from '../review/policy'
+import { displayTier } from '../review/policy'
 import './App.css'
 
 const PLACEHOLDER_DESTINATION = 'GABCDEXAMPLE0000000000000000000000000000000000000000000'
 const PREVIEW_DESTINATION = 'GDRWZV7XVISUALREGRESSIONDESTINATION0000000000000000000'
 
-type LoadState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; score: number }
 type PreviewState =
   | 'loading'
   | 'error'
@@ -84,8 +82,8 @@ export default function App() {
   if (params.get('mode') === 'intercept') {
     return <InterceptView params={params} />
   }
-  if (params.get('dev') === 'score') {
-    return <DevPreview />
+  if (import.meta.env.DEV && params.get('dev') === 'score') {
+    return <DevPreview initialScore={Number(params.get('score') ?? 50)} />
   }
   return <ProtectionStatusPanel />
 }
@@ -204,15 +202,10 @@ function InterceptView({ params }: { params: URLSearchParams }) {
   }
 
   const { review } = reviewState
-  const tier = tierForScore(
-    { low: 10, elevated: 35, high: 60, critical: 85 }[tierForReviewSeverity(review.severity)],
-  )
-  const score = { info: 10, warning: 35, high: 60, critical: 85 }[review.severity]
 
   return (
     <TierWarning
-      tier={tier}
-      score={score}
+      tier={tierInfoFor(displayTier(review))}
       review={review}
       onCancel={() => respond('cancel')}
       onProceed={() => respond('proceed')}
@@ -220,13 +213,25 @@ function InterceptView({ params }: { params: URLSearchParams }) {
   )
 }
 
-function DevPreview() {
-  const [attempt, setAttempt] = useState(0)
+/**
+ * Development-only harness (`?dev=score&score=N`) for exercising the tier
+ * UI with the slider. It never consults an oracle; scores here are
+ * synthetic and the route is compiled out of production builds.
+ */
+function DevPreview({ initialScore }: { initialScore: number }) {
+  const [score, setScore] = useState(Number.isFinite(initialScore) ? initialScore : 50)
   const [showManager, setShowManager] = useState(false)
 
   return (
     <>
-      <ScoreView key={attempt} onRetry={() => setAttempt((n) => n + 1)} />
+      <TierWarning
+        tier={tierForScore(score)}
+        score={score}
+        destinations={[{ destination: PLACEHOLDER_DESTINATION, score }]}
+        onCancel={() => window.close()}
+        onProceed={() => window.close()}
+        devControl={<DevScoreSlider score={score} onChange={setScore} />}
+      />
       <button
         className="manage-trusted"
         onClick={() => setShowManager(true)}
@@ -236,56 +241,6 @@ function DevPreview() {
       </button>
       {showManager && <TrustedAddressesManager onClose={() => setShowManager(false)} />}
     </>
-  )
-}
-
-function ScoreView({ onRetry }: { onRetry: () => void }) {
-  const [state, setState] = useState<LoadState>({ status: 'loading' })
-  const [devOverride, setDevOverride] = useState<number | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    getScore(PLACEHOLDER_DESTINATION)
-      .then((score) => {
-        if (!cancelled) setState({ status: 'ready', score })
-      })
-      .catch(() => {
-        if (!cancelled) setState({ status: 'error' })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  if (state.status === 'loading') {
-    return <div className="popup">Checking destination…</div>
-  }
-
-  if (state.status === 'error') {
-    return (
-      <div className="popup">
-        <p className="message">Could not reach the risk oracle.</p>
-        <button className="proceed" onClick={onRetry}>
-          Retry
-        </button>
-      </div>
-    )
-  }
-
-  const displayScore = devOverride ?? state.score
-  const tier = tierForScore(displayScore)
-
-  return (
-    <TierWarning
-      tier={tier}
-      score={displayScore}
-      destinations={[{ destination: PLACEHOLDER_DESTINATION, score: displayScore }]}
-      onCancel={() => window.close()}
-      onProceed={() => window.close()}
-      devControl={
-        import.meta.env.DEV && <DevScoreSlider score={displayScore} onChange={setDevOverride} />
-      }
-    />
   )
 }
 
