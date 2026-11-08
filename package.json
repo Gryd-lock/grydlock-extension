@@ -18,7 +18,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "visual:serve": "vite --host 127.0.0.1 --port 4173",
-    "demo": "node demo/server.mjs"
+    "demo": "node demo/server.mjs",
+    "package:release": "node scripts/package-release.mjs"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "16.0.1",

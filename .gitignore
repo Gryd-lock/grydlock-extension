@@ -2,5 +2,19 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+
+# Test output (Playwright)
 test-results/
-tests/visual/popup.spec.ts-snapshots/*-chromium-darwin.png
+playwright-report/
+blob-report/
+
+# Release archives are published as GitHub Release assets by
+# .github/workflows/release.yml, never committed.
+release/
+
+# Visual baselines are generated on Linux CI; local macOS runs must not add platform copies.
+tests/visual/popup.spec.ts-snapshots/*-darwin.png
+tests/visual/popup.spec.ts-snapshots/*-win32.png
+
+# Local agent/tool scratch state
+.hermes/
