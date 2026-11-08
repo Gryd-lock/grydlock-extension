@@ -1,4 +1,9 @@
-import { getScore } from '../adapter/oracleAdapter'
+import { createRiskOracle, lookupScore, type OracleSourceConfig } from '../adapter/oracleAdapter'
+import {
+  effectiveOracleSettings,
+  loadOracleSettings,
+  type OracleSourceRefusal,
+} from '../settings/oracleSettings'
 import {
   clearDiagnostics,
   exportDiagnostics,
@@ -20,7 +25,8 @@ import type {
 } from '../intercept/protocol'
 import type { AggregatedReview } from '../review/model'
 import { recordDecision } from '../lib/history'
-import { tierForScore } from '../lib/tiers'
+import { tierForScore, tierInfoFor } from '../lib/tiers'
+import { displayTier } from '../review/policy'
 import {
   isRuntimeAwaitOutcomeMessage,
   isRuntimeDecisionMadeMessage,
@@ -441,16 +447,28 @@ function clearBadgeIfIdle() {
   }
 }
 
-function scoreForSeverity(severity: AggregatedReview['severity']): number {
-  switch (severity) {
-    case 'critical':
-      return 85
-    case 'high':
-      return 60
-    case 'warning':
-      return 35
-    default:
-      return 10
+/** The oracle source in effect for one request, after network policy. */
+async function oracleSourceFor(
+  networkPassphrase: string | undefined,
+): Promise<{ source: OracleSourceConfig; refusal?: OracleSourceRefusal }> {
+  const { settings, refusal } = effectiveOracleSettings(await loadOracleSettings(), networkPassphrase)
+  switch (settings.source) {
+    case 'off':
+      return { source: { kind: 'off' }, refusal }
+    case 'testkit-fixtures':
+      return { source: { kind: 'testkit-fixtures' } }
+    case 'soroban':
+      // The review engine refuses requests without a passphrase before scoring.
+      return networkPassphrase
+        ? {
+            source: {
+              kind: 'soroban',
+              contractId: settings.contractId,
+              rpcUrl: settings.rpcUrl,
+              networkPassphrase,
+            },
+          }
+        : { source: { kind: 'off' } }
   }
 }
 
@@ -547,12 +565,17 @@ function handleSignRequest(
       respondOnce({ type: 'SIGN_ACK', requestId, deadlineAt: record.deadlineAt })
 
       transitionPendingRequest(requestId, 'validating')
+      const { source: oracleSource, refusal } = await oracleSourceFor(message.networkPassphrase)
+      const oracle = createRiskOracle(oracleSource)
       const review = await buildAggregatedReview(
         message.xdr,
-        // The current local adapter only accepts account strings. Keep that
-        // projection here, after the review engine has enforced a typed,
-        // network-scoped account target.
-        { getScore: (target) => getScore(target.value) },
+        {
+          oracleSource: oracleSource.kind,
+          oracleRefusal: refusal,
+          // Only network-scoped account targets reach here (the review engine
+          // enforces that); the oracle receives the bare account string.
+          lookupScore: oracle ? (target) => lookupScore(oracle, target.value) : undefined,
+        },
         message.networkPassphrase,
       )
 
@@ -570,8 +593,7 @@ function handleSignRequest(
       const entry = pendingSignRequests.get(requestId)
       if (entry) entry.review = review
 
-      const score = scoreForSeverity(review.severity)
-      const tierInfo = tierForScore(score)
+      const tierInfo = tierInfoFor(displayTier(review))
       chrome.action.setBadgeText({ text: '!' })
       chrome.action.setBadgeBackgroundColor({ color: tierInfo.colour })
 

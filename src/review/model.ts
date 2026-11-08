@@ -70,15 +70,28 @@ export interface TransactionReview {
   findings: ReviewFinding[]
 }
 
+/**
+ * - `available`: the configured oracle returned a 0–100 score.
+ * - `unscored`: the oracle answered but has no score for this target.
+ * - `unavailable`: an oracle is configured but could not answer.
+ * - `not-configured`: destination scoring is switched off.
+ */
+export type EvidenceStatus = 'available' | 'unscored' | 'unavailable' | 'not-configured'
+
+/** Settings-level identity of the score source; never a user-facing score. */
+export type OracleSourceKind = 'off' | 'testkit-fixtures' | 'soroban'
+
 export interface TargetEvidence {
   target: ReviewTarget
   score?: number
-  status: 'available' | 'unavailable'
+  status: EvidenceStatus
 }
 
 export interface AggregatedReview {
   review: TransactionReview
   evidence: TargetEvidence[]
+  /** Which score source produced `evidence`. Absent on reviews built before this field existed. */
+  oracleSource?: OracleSourceKind
   severity: ReviewSeverity
   findings: ReviewFinding[]
 }

@@ -31,18 +31,30 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run validate:manifest
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: xvfb-run --auto-servernum npm run test:e2e
       - name: Read release version
         id: version
         run: echo "value=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - run: npm run package:release
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.value }}
+      - name: Checksum release archive
+        working-directory: release
+        run: sha256sum "grydlock-extension-v${{ steps.version.outputs.value }}.zip" > SHA256SUMS
+      # Archives are published only as GitHub Release assets; release/ is gitignored.
       - name: Publish GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARCHIVE: release/grydlock-extension-v${{ steps.version.outputs.value }}.zip
         run: |
-          gh release create "$RELEASE_TAG" \
-            "release/grydlock-extension-v${{ steps.version.outputs.value }}.zip" \
-            --generate-notes \
-            --verify-tag
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            # Re-running the workflow for an existing tag refreshes its assets.
+            gh release upload "$RELEASE_TAG" "$ARCHIVE" release/SHA256SUMS --clobber
+          else
+            gh release create "$RELEASE_TAG" "$ARCHIVE" release/SHA256SUMS \
+              --generate-notes \
+              --verify-tag
+          fi

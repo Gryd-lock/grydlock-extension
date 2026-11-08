@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gryd Lock demo dApp</title>
+    <style>
+      body { font: 15px/1.5 system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      .note { color: #555; font-size: 13px; }
+      table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; vertical-align: top; }
+      button { font: inherit; padding: 4px 10px; cursor: pointer; }
+      code { font-size: 12px; word-break: break-all; }
+      #result { min-height: 3em; padding: 8px 12px; background: #f4f4f5; border-radius: 4px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Gryd Lock demo dApp</h1>
+    <p class="note">
+      Sends a Freighter <code>SUBMIT_TRANSACTION</code> request with an unsigned
+      <a href="https://github.com/Gryd-lock/grydlock-testkit">grydlock-testkit</a> testnet
+      transaction. Nothing is signed or submitted. All addresses are synthetic.
+    </p>
+
+    <label>
+      <input type="checkbox" id="simulate-wallet" checked />
+      Simulate the wallet's reply (no Freighter needed). Untick this if real Freighter is installed.
+    </label>
+
+    <table>
+      <thead>
+        <tr><th>Fixture</th><th>Score source: Off (default)</th><th>Score source: Testkit fixtures</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Payment, 50 XLM to <em>suspicious_wallet_1</em></td>
+          <td>Unknown</td><td>High (score 55)</td>
+          <td><button type="button" data-fixture="payment">Send</button></td>
+        </tr>
+        <tr>
+          <td>Path payment to <em>malicious_wallet_1</em></td>
+          <td>Elevated (path not verifiable offline)</td><td>Critical (score 92)</td>
+          <td><button type="button" data-fixture="path_payment">Send</button></td>
+        </tr>
+        <tr>
+          <td>Fee-bump wrapping the payment</td>
+          <td>Unknown</td><td>High (score 55)</td>
+          <td><button type="button" data-fixture="fee_bump_payment">Send</button></td>
+        </tr>
+        <tr>
+          <td>Trustline to the <em>SCAM</em> asset</td>
+          <td colspan="2">
+            Elevated, but only for incomplete coverage. <strong>Known gap:</strong> the SCAM asset
+            itself is not checked yet
+          </td>
+          <td><button type="button" data-fixture="change_trust">Send</button></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Wallet response</h2>
+    <div id="result" role="status" aria-live="polite">No request sent yet.</div>
+
+    <script>
+      const REQUEST = 'FREIGHTER_EXTERNAL_MSG_REQUEST'
+      const RESPONSE = 'FREIGHTER_EXTERNAL_MSG_RESPONSE'
+      const TESTNET = 'Test SDF Network ; September 2015'
+      const result = document.getElementById('result')
+      let nextId = 1000
+
+      // Stand-in for Freighter: answer only the request Gryd Lock re-posts
+      // after the user chose Proceed.
+      window.addEventListener('message', (event) => {
+        if (event.source !== window) return
+        const data = event.data || {}
+        if (
+          data.source === REQUEST &&
+          data.type === 'SUBMIT_TRANSACTION' &&
+          data.__grydlockReviewed === true &&
+          document.getElementById('simulate-wallet').checked
+        ) {
+          window.postMessage(
+            { source: RESPONSE, messageId: data.messageId, signedTransaction: 'demo-wallet-would-sign-here', signerAddress: 'GDEMO' },
+            window.location.origin,
+          )
+        }
+      })
+
+      async function submit(fixture, networkPassphrase = TESTNET) {
+        const transactionXdr = await (await fetch(`/fixtures/${fixture}.xdr`)).text()
+        const messageId = nextId++
+        result.textContent = `Waiting for Gryd Lock review of ${fixture}…`
+        return new Promise((resolve) => {
+          function onMessage(event) {
+            if (event.source !== window) return
+            const data = event.data || {}
+            if (data.source !== RESPONSE || data.messageId !== messageId) return
+            window.removeEventListener('message', onMessage)
+            const outcome = data.apiError
+              ? { fixture, outcome: 'rejected', code: data.apiError.code }
+              : { fixture, outcome: 'forwarded-to-wallet', signedTransaction: data.signedTransaction }
+            result.textContent = JSON.stringify(outcome, null, 2)
+            resolve(outcome)
+          }
+          window.addEventListener('message', onMessage)
+          window.postMessage(
+            { source: REQUEST, messageId, type: 'SUBMIT_TRANSACTION', transactionXdr, networkPassphrase },
+            window.location.origin,
+          )
+        })
+      }
+
+      window.grydlockDemo = { submit }
+      for (const button of document.querySelectorAll('button[data-fixture]')) {
+        button.addEventListener('click', () => submit(button.dataset.fixture))
+      }
+    </script>
+  </body>
+</html>

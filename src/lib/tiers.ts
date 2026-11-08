@@ -62,9 +62,11 @@ const TIERS: Array<{ max: number; info: TierInfo }> = [
 ]
 
 /**
- * Sentinel TierInfo used when the risk oracle is unreachable and no score
- * could be obtained. Must be visually distinct from every scored tier so
- * the user can clearly tell this is an assessment failure, not a low-risk result.
+ * Sentinel TierInfo used when no destination score exists (oracle off, the
+ * destination is not in the score source, or the oracle is unreachable) and
+ * the transaction review found nothing more serious. Must be visually
+ * distinct from every scored tier so the user can tell "no assessment" apart
+ * from a low-risk result.
  */
 export const UNSCORED_TIER_INFO: TierInfo = {
   tier: 'unscored',
@@ -72,7 +74,14 @@ export const UNSCORED_TIER_INFO: TierInfo = {
   colour: '#5c6bc0', // indigo — distinct from all scored-tier colours
   darkColour: '#9fa8da',
   icon: '?',
-  message: "Couldn't reach the risk oracle. Proceed only if you fully trust this destination.",
+  message:
+    'No destination risk score is available. Check the transaction details below and proceed only if you trust this destination.',
+}
+
+/** TierInfo for a named tier. `unscored` maps to {@link UNSCORED_TIER_INFO}. */
+export function tierInfoFor(tier: Tier): TierInfo {
+  if (tier === 'unscored') return UNSCORED_TIER_INFO
+  return TIERS.find(({ info }) => info.tier === tier)!.info
 }
 
 export function tierForScore(score: number): TierInfo {

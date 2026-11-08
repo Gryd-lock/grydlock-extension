@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/build-oracle-adapter.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/build-extension.mjs",
     "check:versions": "node scripts/check-versions.mjs",
@@ -16,10 +17,13 @@
     "test:visual": "playwright test tests/visual --project=chromium",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "visual:serve": "vite --host 127.0.0.1 --port 4173"
+    "visual:serve": "vite --host 127.0.0.1 --port 4173",
+    "demo": "node demo/server.mjs",
+    "package:release": "node scripts/package-release.mjs"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "16.0.1",
+    "grydlock-oracle-adapter": "https://codeload.github.com/Gryd-lock/grydlock-oracle-adapter/tar.gz/81b09e371694998d5c42e66be656aaaef409c176",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -42,6 +46,7 @@
     "eslint-plugin-react-refresh": "^0.5.4",
     "fast-check": "^4.9.0",
     "globals": "^17.11.0",
+    "grydlock-testkit": "https://codeload.github.com/Gryd-lock/grydlock-testkit/tar.gz/7064404d6e7c44df1f980d532d23901651d79426",
     "jest-axe": "^10.0.0",
     "jsdom": "^29.1.1",
     "prettier": "^3.9.6",

@@ -1,210 +1,139 @@
-import { DEFAULT_GET_SCORE_TIMEOUT_MS } from './config';
+import {
+  CircuitBreakerOracle,
+  OracleError,
+  SOROBAN_ORACLE_INTERFACE_VERSION_RANGE,
+  SorobanOracle,
+  StubOracle,
+  compose,
+  withCache,
+  withTimeout,
+  type RiskOracle,
+} from 'grydlock-oracle-adapter'
+import {
+  ORACLE_BREAKER_COOLDOWN_MS,
+  ORACLE_BREAKER_FAILURE_THRESHOLD,
+  ORACLE_CACHE_MAX_ENTRIES,
+  ORACLE_CACHE_TTL_MS,
+  ORACLE_TIMEOUT_MS,
+} from './config'
+import { SorobanRpcLiveTransport } from './sorobanRpcTransport'
 
 /**
- * Simple in-memory LRU cache with TTL for score values.
+ * Which score source the extension consults for destination risk. `off` is
+ * the default: the extension then shows its local transaction review only
+ * and never fabricates a destination score.
  */
-class ScoreCache {
-  private maxSize: number;
-  private ttlMs: number;
-  private map: Map<string, { value: number; expiresAt: number }>;
+export type OracleSourceConfig =
+  | { kind: 'off' }
+  | { kind: 'testkit-fixtures' }
+  | { kind: 'soroban'; contractId: string; rpcUrl: string; networkPassphrase: string }
 
-  constructor(maxSize: number, ttlMs: number) {
-    this.maxSize = maxSize;
-    this.ttlMs = ttlMs;
-    this.map = new Map();
-  }
+export const DEFAULT_ORACLE_SOURCE: OracleSourceConfig = { kind: 'off' }
 
-  get(key: string): number | undefined {
-    const entry = this.map.get(key);
-    if (!entry) return undefined;
-    if (Date.now() > entry.expiresAt) {
-      this.map.delete(key);
-      return undefined;
-    }
-    // Refresh LRU order
-    this.map.delete(key);
-    this.map.set(key, entry);
-    return entry.value;
-  }
-
-  set(key: string, value: number): void {
-    if (this.map.has(key)) this.map.delete(key);
-    if (this.map.size >= this.maxSize) {
-      const oldestKey = this.map.keys().next().value;
-      if (oldestKey !== undefined) this.map.delete(oldestKey);
-    }
-    const expiresAt = Date.now() + this.ttlMs;
-    this.map.set(key, { value, expiresAt });
-  }
-}
-
-// Default cache configuration
-const DEFAULT_TTL_MS = 180_000; // 3 minutes
-const DEFAULT_MAX_CACHE_SIZE = 100;
-
-/** Global cache instance used by getScore */
-const scoreCache = new ScoreCache(DEFAULT_MAX_CACHE_SIZE, DEFAULT_TTL_MS);
-
-/** Helper: sleep for ms */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Jittered backoff delay */
-function jitter(base: number): number {
-  const min = base / 2;
-  const max = base * 1.5;
-  return Math.random() * (max - min) + min;
-}
-
-/** Generic retry with exponential backoff and jitter. */
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  attempts: number,
-  baseDelayMs: number,
-): Promise<T> {
-  let attempt = 0;
-  while (true) {
-    try {
-      return await fn();
-    } catch (e) {
-      attempt++;
-      if (attempt > attempts) throw e;
-      const delay = Math.pow(2, attempt - 1) * baseDelayMs + jitter(baseDelayMs);
-      await sleep(delay);
-    }
-  }
-}
-
-/** Simple circuit breaker. */
-export class CircuitBreaker {
-  private failureCount = 0;
-  private state: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
-  private lastFailureTime = 0;
-
-  constructor(
-    private failureThreshold: number,
-    private windowMs: number,
-    private cooldownMs: number,
-  ) {}
-
-  private now() {
-    return Date.now();
-  }
-
-  private transitionToOpen() {
-    this.state = 'OPEN';
-    this.lastFailureTime = this.now();
-    console.warn('Circuit breaker opened');
-  }
-
-  private transitionToHalfOpen() {
-    this.state = 'HALF_OPEN';
-    console.warn('Circuit breaker half‑open');
-  }
-
-  private transitionToClosed() {
-    this.state = 'CLOSED';
-    this.failureCount = 0;
-    console.warn('Circuit breaker closed');
-  }
-
-  async exec<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
-    const now = this.now();
-
-    if (this.state === 'OPEN') {
-      if (now - this.lastFailureTime > this.cooldownMs) {
-        this.transitionToHalfOpen();
-      } else {
-        return fallback;
-      }
-    }
-
-    try {
-      const result = await fn();
-      // success – reset
-      this.failureCount = 0;
-      if (this.state !== 'CLOSED') this.transitionToClosed();
-      return result;
-    } catch (e) {
-      // failure handling
-      if (now - this.lastFailureTime > this.windowMs) {
-        // reset window
-        this.failureCount = 1;
-        this.lastFailureTime = now;
-      } else {
-        this.failureCount++;
-        this.lastFailureTime = now;
-      }
-
-      if (this.failureCount >= this.failureThreshold) {
-        this.transitionToOpen();
-      }
-      throw e;
-    }
-  }
-}
-
-// Default breaker config (can be tuned)
-export const circuitBreaker = new CircuitBreaker(5, 60_000, 30_000);
+/** Typed outcome of asking the configured oracle about one destination. */
+export type ScoreLookup =
+  | { status: 'available'; score: number }
+  /** The oracle answered, but has no score for this destination. */
+  | { status: 'unscored' }
+  /** The oracle was configured but could not answer (timeout, network, breaker open, bad response). */
+  | { status: 'unavailable' }
 
 /**
- * Core score fetching logic (stub). Extracted for testing and cache usage.
+ * `StubOracle` resolves `0` for any destination missing from the vendored
+ * grydlock-testkit fixtures ("so the extension always has a number to
+ * render"). Rendering that as "Low risk" would be a fabricated result, so
+ * the fixture source maps it back to an explicit "not in fixtures" answer.
+ * The testkit fixture set deliberately contains no 0-scored destination;
+ * `oracleAdapter.test.ts` pins that against the testkit itself.
  */
-export async function fetchScore(destination: string): Promise<number> {
-  // Simulate async work (the existing stub delay).
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  return stubScoreFor(destination);
+export const STUB_ORACLE_UNKNOWN_SCORE = 0
+
+class UnscoredDestination extends Error {
+  constructor() {
+    super('Destination not present in the configured score source.')
+    this.name = 'UnscoredDestination'
+  }
 }
 
-/**
- * Retrieves a risk score for a destination with a configurable timeout.
- * If the operation exceeds the timeout, it resolves with a fallback score of -1.
- * Supports in‑memory caching with optional bypass.
- */
-export async function getScore(
-  destination: string,
-  options?: { timeoutMs?: number; signal?: AbortSignal; bypassCache?: boolean },
-): Promise<number> {
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_GET_SCORE_TIMEOUT_MS;
-  const bypassCache = options?.bypassCache ?? false;
+class TestkitFixtureOracle implements RiskOracle {
+  private readonly stub = new StubOracle()
 
-  if (!bypassCache) {
-    const cached = scoreCache.get(destination);
-    if (cached !== undefined) return cached;
+  async getScore(destination: string): Promise<number> {
+    const score = await this.stub.getScore(destination)
+    if (score === STUB_ORACLE_UNKNOWN_SCORE) throw new UnscoredDestination()
+    return score
   }
-
-  const controller = new AbortController();
-  const combinedSignal = options?.signal ?? controller.signal;
-
-  // Timeout handling
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    const id = setTimeout(() => {
-      controller.abort();
-      reject(new Error('Timeout'));
-    }, timeoutMs);
-    combinedSignal.addEventListener('abort', () => clearTimeout(id));
-  });
-
-  const fetchFn = () => fetchScore(destination);
-  // Wrap fetch with retry logic (max 2 retries, base 200ms)
-  const scorePromise = retryWithBackoff(fetchFn, 2, 200);
-
-  // Execute with circuit breaker, fallback -1 on open
-  return await circuitBreaker.exec(async () => {
-    const result = await Promise.race([scorePromise, timeoutPromise]);
-    // Cache successful result
-    scoreCache.set(destination, result as number);
-    return result as number;
-  }, -1).catch(() => -1);
 }
 
+function withResilience(base: RiskOracle): RiskOracle {
+  // Circuit breaker wraps the timeout so repeated timeouts trip it; the cache
+  // sits outermost so a cached answer never waits on a tripped breaker.
+  const guarded = new CircuitBreakerOracle(withTimeout({ timeoutMs: ORACLE_TIMEOUT_MS })(base), {
+    failureThreshold: ORACLE_BREAKER_FAILURE_THRESHOLD,
+    cooldownWindow: ORACLE_BREAKER_COOLDOWN_MS,
+  })
+  return compose(withCache({ ttlMs: ORACLE_CACHE_TTL_MS, maxEntries: ORACLE_CACHE_MAX_ENTRIES }))(
+    guarded,
+  )
+}
 
-/** Simple deterministic stub used by the current implementation. */
-function stubScoreFor(destination: string): number {
-  let hash = 0;
-  for (let i = 0; i < destination.length; i++) {
-    hash = (hash * 31 + destination.charCodeAt(i)) >>> 0;
+function buildOracle(source: Exclude<OracleSourceConfig, { kind: 'off' }>): RiskOracle {
+  switch (source.kind) {
+    case 'testkit-fixtures':
+      return withResilience(new TestkitFixtureOracle())
+    case 'soroban':
+      return withResilience(
+        new SorobanOracle(
+          {
+            environment: 'production',
+            networkPassphrase: source.networkPassphrase,
+            rpcEndpoints: [source.rpcUrl],
+            contractId: source.contractId,
+            supportedInterfaceVersionRange: SOROBAN_ORACLE_INTERFACE_VERSION_RANGE,
+            // Simulation reads current ledger state, so there are no
+            // confirmations to wait for; results older than a minute are
+            // reported stale by SorobanOracle rather than live.
+            finalityPolicy: { minConfirmations: 0, maxResultAgeMs: 60_000 },
+            requestBudgetMs: ORACLE_TIMEOUT_MS,
+          },
+          new SorobanRpcLiveTransport({ rpcUrl: source.rpcUrl, contractId: source.contractId }),
+        ),
+      )
   }
-  return hash % 101;
+}
+
+// One instance per distinct configuration, so cache and breaker state
+// persist across requests and never leak between sources or networks.
+const oracles = new Map<string, RiskOracle>()
+
+/** Builds (or reuses) the oracle for a source, or `null` when scoring is switched off. */
+export function createRiskOracle(source: OracleSourceConfig): RiskOracle | null {
+  if (source.kind === 'off') return null
+  const key = JSON.stringify(source)
+  let oracle = oracles.get(key)
+  if (!oracle) {
+    oracle = buildOracle(source)
+    oracles.set(key, oracle)
+  }
+  return oracle
+}
+
+function isUnscoredError(error: unknown): boolean {
+  return (
+    error instanceof UnscoredDestination ||
+    (error instanceof OracleError &&
+      (error.code === 'UNRECOGNIZED_DESTINATION' || error.code === 'SCORE_NOT_YET_COMPUTED'))
+  )
+}
+
+/** Asks `oracle` for one destination's score, classifying every failure instead of inventing a number. */
+export async function lookupScore(oracle: RiskOracle, destination: string): Promise<ScoreLookup> {
+  try {
+    const score = await oracle.getScore(destination)
+    return Number.isInteger(score) && score >= 0 && score <= 100
+      ? { status: 'available', score }
+      : { status: 'unavailable' }
+  } catch (error) {
+    return isUnscoredError(error) ? { status: 'unscored' } : { status: 'unavailable' }
+  }
 }

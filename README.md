@@ -6,7 +6,59 @@
 [![Built with TypeScript](https://img.shields.io/badge/Built%20with-TypeScript-3178c6?logo=typescript&logoColor=white)](<>)
 [![Status: Early Build](https://img.shields.io/badge/status-early%20build-orange)](<>)
 
-**The Gryd Lock browser extension — warns before signing only when its current protection path can be observed honestly.**
+**Warns you before you sign a risky Stellar transaction — and says "unknown" instead of guessing.**
+
+## Try it
+
+You need Node 20+ and a Chromium browser (Chrome, Brave or Edge). After `npm ci`, the steps take
+about 30 seconds and need no wallet, account or network access.
+
+```bash
+npm ci && npm run build   # builds the unpacked extension into dist/
+npm run demo              # local test dApp on http://127.0.0.1:5174
+```
+
+1. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick
+   `dist/`.
+2. Open <http://127.0.0.1:5174> and click **Send** next to _Payment_. Gryd Lock intercepts the
+   Freighter `SUBMIT_TRANSACTION` request and opens its review. With the default settings it shows
+   **Unknown risk**: no score source is configured, so it reviews the transaction but does not
+   invent a score.
+3. Open the extension's **Options** page, set _Destination risk score source_ to **Testkit
+   fixtures (testnet only)**, and click **Save**. Send _Payment_ again to get **High risk (score 55)**, or _Path payment_ to get **Critical risk (score 92)**. **Cancel** returns a wallet
+   rejection to the page. **Proceed** forwards the request to the wallet. The demo page simulates
+   the wallet reply unless you untick that option.
+
+<!-- GIF placeholder: record steps 2–3 at 800px wide and save as docs/media/try-it.gif, then
+     replace this comment with: ![Gryd Lock warning on the demo dApp](docs/media/try-it.gif) -->
+
+_Walkthrough GIF: not recorded yet._
+
+The demo transactions are unsigned testnet XDR from
+[`grydlock-testkit`](https://github.com/Gryd-lock/grydlock-testkit). All of their addresses are
+synthetic.
+
+## Status
+
+| Area                                                                | Status                 | Notes                                                                                                                                                                                                          |
+| ------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Freighter interception (`SUBMIT_TRANSACTION` postMessage)           | ✅ Works               | Covered by Playwright E2E against the built extension                                                                                                                                                          |
+| Albedo interception (popup `tx` / `pay` intents)                    | ✅ Works               | Implicit-flow and SEP-0007 intents are not intercepted                                                                                                                                                         |
+| Local transaction review (every operation, fee-bump, memo, Soroban) | ✅ Works               | Each operation is labelled understood, partial or opaque                                                                                                                                                       |
+| Four-tier warning with Cancel / Proceed and confirmation gates      | ✅ Works               | Plus an **Unknown** state when no score exists                                                                                                                                                                 |
+| Score source: Off (default)                                         | ✅ Works               | Shows the review only. No network requests                                                                                                                                                                     |
+| Score source: Testkit fixtures                                      | ✅ Works, testnet only | Synthetic scores from `grydlock-testkit`. Refused for mainnet and any non-testnet passphrase                                                                                                                   |
+| Score source: Soroban oracle                                        | 🧪 Experimental        | Real RPC transport through [`grydlock-oracle-adapter`](https://github.com/Gryd-lock/grydlock-oracle-adapter)'s `SorobanOracle`. **No oracle contract is deployed**, so lookups report "assessment unavailable" |
+| Protection-status toolbar popup                                     | ✅ Works               | Per-tab handshake health. It cannot prove listener ordering against other extensions                                                                                                                           |
+| Decision history (local only)                                       | ⚠️ Partial             | Records only decisions on scored destinations, so with scoring off nothing is recorded                                                                                                                         |
+| Asset-level checks (scam trustlines, asset issuers)                 | ❌ Not built           | `changeTrust` to a scam asset is flagged only for incomplete coverage                                                                                                                                          |
+| xBull / Lobstr                                                      | ❌ Not built           |                                                                                                                                                                                                                |
+| Firefox                                                             | ❌ Not built           | Feasibility in [spike 0117](docs/spikes/0117-cross-browser-extension-compatibility.md)                                                                                                                         |
+| Localisation                                                        | ❌ Not built           | English only                                                                                                                                                                                                   |
+| Chrome Web Store listing                                            | ❌ Not published       | Install unpacked, or from a [GitHub Release](https://github.com/Gryd-lock/grydlock-extension/releases) zip                                                                                                     |
+
+Background reading: the [design study](docs/design-study.md) (threat model, research questions,
+evaluation plan) and the [threat model](docs/threat-model.md).
 
 ## Overview
 
@@ -19,9 +71,8 @@ check; it never calls a site or wallet flow protected merely because the extensi
 
 For detailed information on data handling, data protection, and our no-telemetry architecture, see [PRIVACY.md](PRIVACY.md).
 
-> **Status:** Early build. A Freighter `signTransaction` proxy reviews the complete envelope and
-> shows the warning before signing. An Albedo adapter intercepts the `window.open` popup flow. A
-> live oracle connection is **not yet built** — see the roadmap.
+> **Status:** Early build. See [Status](#status) for exactly what works, what is
+> experimental, and what is not built.
 
 ## What it does
 
@@ -39,6 +90,7 @@ Classify each operation as understood, partial, or opaque
         │
         ▼
 Request optional 0–100 risk evidence for typed account targets
+(only if a score source is configured — default is off)
         │
         ▼
 Aggregate semantic findings, incomplete coverage, and evidence → show the warning
@@ -49,12 +101,18 @@ User proceeds or cancels — the extension never blocks
 
 ### Warning tiers
 
-| Score  | Tier     | Behaviour                                   |
-| ------ | -------- | ------------------------------------------- |
-| 0–20   | Low      | Green indicator, proceed                    |
-| 21–50  | Elevated | Soft warning                                |
-| 51–75  | High     | Strong warning, checkbox enables proceed    |
-| 76–100 | Critical | Recommend abort, type `CRITICAL` to proceed |
+| Score  | Tier     | Behaviour                                                              |
+| ------ | -------- | ---------------------------------------------------------------------- |
+| 0–20   | Low      | Green indicator, proceed                                               |
+| 21–50  | Elevated | Soft warning                                                           |
+| 51–75  | High     | Strong warning, checkbox enables proceed                               |
+| 76–100 | Critical | Recommend abort, type `CRITICAL` to proceed                            |
+| none   | Unknown  | No destination score exists, and the review found nothing more serious |
+
+The shown tier is the **worst** of the destination score and the semantic review findings. For
+example, a signer change or an opaque Soroban call can raise a warning to High or Critical with no
+score at all. A review is shown as **Low** only when every scoreable destination has a score.
+Otherwise it is **Unknown**.
 
 ## Why Freighter First
 
@@ -103,7 +161,11 @@ Proxy intercepts first postMessage for 'tx' / 'pay' intents with an xdr field
 
 ## Accessibility
 
-The warning popup is fully accessible to screen reader users (e.g., VoiceOver, NVDA). It implements the `alertdialog` ARIA role and uses an `assertive` live region to ensure the risk tier is announced immediately upon opening. The popup wires the risk level, destination, and warning message together using `aria-describedby` so the complete context is conveyed coherently without relying on visual cues.
+The warning is a modal `role="dialog"` labelled by its tier heading, which sits in an
+`aria-live="assertive"` region so screen readers (VoiceOver, NVDA) announce the tier on open. Each
+tier also has a distinct icon, so colour is never the only signal, and review findings are
+rendered in a `role="alert"` list. Keyboard behaviour is described under
+[How the Pieces Connect](#how-the-pieces-connect). `jest-axe` checks run in the popup tests.
 
 ## Tech Stack
 
@@ -112,30 +174,40 @@ The warning popup is fully accessible to screen reader users (e.g., VoiceOver, N
 - **Stellar SDK (JS)** — decoding the unsigned transaction
 - **Manifest V3** — Chrome / Brave / Edge extension format
 
-The risk score itself is fetched through [`grydlock-oracle-adapter`](../grydlock-oracle-adapter); this repo holds no scoring logic.
+The risk score itself comes through [`grydlock-oracle-adapter`](https://github.com/Gryd-lock/grydlock-oracle-adapter)
+(`RiskOracle`, `StubOracle`, `SorobanOracle`, cache, timeout and circuit-breaker middleware). This
+repo holds no scoring logic. The package is installed from a commit-pinned GitHub tarball and built
+in place by `scripts/build-oracle-adapter.mjs` (postinstall), because the upstream repo does not
+publish built output yet.
 
 ## Project Layout
 
 ```
 grydlock-extension/
-├── manifest.json             # MV3 — popup, background service worker, content scripts
+├── manifest.json               # MV3 — popup, background service worker, content scripts
+├── demo/                       # Local test dApp (`npm run demo`) serving grydlock-testkit XDR
+├── e2e/                        # Playwright E2E against the built extension
 ├── scripts/
-│   └── build-extension.mjs   # esbuild bundle for background.js / mainWorld.js / albedoMainWorld.js / bridge.js
+│   ├── build-extension.mjs     # esbuild bundles for background / mainWorld / albedoMainWorld / bridge
+│   └── build-oracle-adapter.mjs  # postinstall: builds grydlock-oracle-adapter's dist/
 ├── src/
-│   ├── adapter/                # Oracle adapter stub — getScore(destination)
+│   ├── adapter/                # Score sources on top of grydlock-oracle-adapter + Soroban RPC transport
 │   ├── background/             # Service worker: decodes XDR, scores, opens the warning popup
-│   ├── decode/                  # XDR → destination extraction (Stellar SDK)
-│   ├── history/                  # Decision history page (extension options page)
-│   ├── intercept/                 # Freighter + Albedo proxies + message-bridge protocol
-│   ├── lib/                        # Score → tier mapping, local decision history storage
-│   └── popup/                       # React warning UI — default (dev) and intercept modes
+│   ├── decode/                 # XDR → versioned transaction review (Stellar SDK)
+│   ├── history/                # Options page: score-source setting, decision history, diagnostics
+│   ├── intercept/              # Freighter + Albedo proxies + message-bridge protocol
+│   ├── lib/                    # Tier definitions, local decision history storage
+│   ├── popup/                  # React warning UI and protection-status toolbar popup
+│   ├── review/                 # Review model and the single aggregation/tier policy
+│   └── settings/               # Score-source settings: storage, validation, network policy, UI
 └── README.md
 ```
 
 ## Decision History
 
-Every proceed/cancel decision made in the warning popup is recorded locally: destination,
-asset (when present), score, tier, decision, and timestamp. Open it via the extension's
+Proceed/cancel decisions on **scored** destinations are recorded locally: destination, asset
+(when present), score, tier, decision, and timestamp. Reviews without a score (for example, with
+scoring off) are not recorded yet. Open it via the extension's
 **Options** page (right-click the toolbar icon → Options, or `chrome://extensions` → Gryd Lock →
 Details → Extension options).
 
@@ -174,18 +246,8 @@ know ledger-dependent outcomes.
 
 ## How the Pieces Connect
 
-**Toolbar click (dev/testing)** — unchanged from the stub-only build:
-
-```
-manifest.json (action.default_popup)
-        │
-        ▼
-src/popup/index.html → main.tsx → App.tsx (default mode)
-                                        │
-                                        ├─▶ src/adapter/oracleAdapter.ts → getScore(destination)
-                                        ├─▶ src/lib/tiers.ts → tierForScore(score)
-                                        └─▶ src/popup/DevScoreSlider.tsx (dev-only override)
-```
+**Toolbar click** opens the protection-status panel (`src/popup/ProtectionStatus.tsx`). It
+reports per-tab handshake health and never shows a score.
 
 **Real Freighter signing** — `@stellar/freighter-api`'s `signTransaction` doesn't call a global
 function; it posts `{ source: 'FREIGHTER_EXTERNAL_MSG_REQUEST', type: 'SUBMIT_TRANSACTION', ... }`
@@ -211,7 +273,8 @@ src/background/background.ts      (service worker)
         │      retains the exact network-bound digest, ordered operations, static facts,
         │      typed targets, coverage, and semantic findings
         │
-        ├─▶ typed account targets scored independently via src/adapter/oracleAdapter.ts
+        ├─▶ typed account targets looked up via src/adapter/oracleAdapter.ts, using the source
+        │      chosen in settings (off by default; fixtures refused off testnet)
         │
         └─▶ shared review policy aggregates semantic findings, incomplete coverage, and evidence
                    │
@@ -238,7 +301,8 @@ src/background/background.ts      (service worker)
   alongside it in the isolated content-script world and is the only piece that can talk to the
   extension via `chrome.runtime`. Decoding and scoring happen in the background worker rather than
   in `mainWorldEntry.ts` so the Stellar SDK ships once per browser session instead of being
-  injected into every page (`mainWorld.js` is ~2&nbsp;KB; the SDK lives in `background.js` instead).
+  injected into every page (`mainWorld.js` has a 5.5&nbsp;KB budget enforced by the build; the SDK
+  lives in `background.js` instead).
 - **Keyboard-first approval**: the warning is an approval dialog for a signing request, so it is
   fully operable without a mouse. `src/popup/TierWarning.tsx` renders as a modal dialog
   (`role="dialog"`, `aria-modal`, labelled by the tier heading) and:
@@ -256,7 +320,7 @@ src/background/background.ts      (service worker)
   are rendered as incomplete coverage and can never be presented as an unqualified low-risk review.
   Static review never claims ledger-dependent effects.
 - **Typed targets**: account, contract, claimable-balance, and liquidity-pool identifiers retain the
-  exact network passphrase. Only account targets are projected to the legacy destination scorer.
+  exact network passphrase. Only account targets are sent to the destination score source.
   In particular, a claimable-balance ID is local review data, never an account-oracle query.
 - **Tests**: `src/decode/transactionReview.test.ts`, `src/decode/sorobanSemantics.test.ts`, and
   `src/intercept/resolveOutcome.test.ts` cover review construction, bounded Soroban analysis,
@@ -273,15 +337,13 @@ guarantees, explicit non-goals, known gaps, and security-hardening roadmap.
 
 ## Develop
 
-1. `npm install`
-2. `npm run build` (or `npm run dev` for a local dev server against the default/dev popup only —
-   the content scripts and background worker require a real `chrome://extensions` load).
-3. Go to `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, select the `dist/` output.
-4. Open the popup from the toolbar to exercise the dev/testing flow — the score comes from the
-   adapter stub, and in dev builds the dev control lets you drag through all four tiers. To exercise
-   real interception, visit a page with Freighter installed and call `signTransaction`. The popup
-   follows the browser or OS `prefers-color-scheme` setting in both the default preview and
-   interception flows.
+1. `npm ci` (also builds `grydlock-oracle-adapter` via postinstall)
+2. `npm run build`, or `npm run dev` for a Vite dev server for the popup only. The content scripts
+   and background worker need a real `chrome://extensions` load.
+3. Load `dist/` unpacked (see [Try it](#try-it)) and use `npm run demo` to send test requests.
+4. In dev builds, `src/popup/index.html?dev=score&score=60` renders the warning with a slider over
+   synthetic scores, for UI work. That route is compiled out of production builds and never calls
+   an oracle.
 
 ## Quality Gates
 
@@ -292,12 +354,18 @@ npm run test:coverage     # Vitest + v8 coverage (enforces thresholds)
 npm run validate:manifest # MV3 / Chrome Web Store policy checks
 npm run build             # tsc -b && vite build && node scripts/build-extension.mjs
 npm run test:visual       # Playwright visual regression snapshots
+npm run test:e2e          # Playwright E2E: built extension + demo dApp + testkit XDR (headed; use xvfb-run on Linux)
 ```
 
-All six run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull request.
-Popup visual regression snapshots run in CI as well via `npm run test:visual`; if a UI change is
-intentional, refresh baselines locally with `npx playwright test --update-snapshots` and commit the
-updated files from `tests/visual/popup.spec.ts-snapshots/`.
+All of these run in CI (`.github/workflows/ci.yml`) on every push to `main` and on every pull
+request. If a UI change is intentional, refresh the visual baselines with
+`npx playwright test --update-snapshots` and commit the updated files from
+`tests/visual/popup.spec.ts-snapshots/`.
+
+Releases are built by `.github/workflows/release.yml` on a `v*` tag. It runs the gates above and
+attaches `grydlock-extension-vX.Y.Z.zip` plus `SHA256SUMS` to a
+[GitHub Release](https://github.com/Gryd-lock/grydlock-extension/releases). Archives are never
+committed.
 
 **Content Security Policy.** `manifest.json` declares `content_security_policy.extension_pages`
 as `script-src 'self'; object-src 'self'`. The Vite build emits no inline scripts or styles for
@@ -316,12 +384,6 @@ that unit tests cannot provide:
 - `src/popup/main.tsx` — React entry-point boilerplate.
 - `src/intercept/protocol.ts` — constant and type definitions only.
 
-## Timeout Behavior for getScore
-
-`getScore` now includes a built‑in timeout to prevent the signing flow from hanging indefinitely. The default timeout is **5 seconds** and can be overridden per call via the optional `options` parameter. If the operation exceeds the timeout, the function resolves with a fallback score of `-1`, which is treated as an unknown score and results in a safe warning tier.
-
-You can configure the default timeout by modifying `src/adapter/config.ts` (`DEFAULT_GET_SCORE_TIMEOUT_MS`). Tests use a shorter timeout to verify the fallback behaviour.
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, architecture guardrails, testing
@@ -333,15 +395,20 @@ contracts, interception semantics, or security boundaries should follow the ligh
 
 ## Roadmap
 
-- [x] Popup renders one score across the four tiers. _(stub)_
-- [x] Fetch the score through the oracle adapter (stub score) — prove the query path end to end.
-- [x] Freighter interception: proxy `signTransaction`, decode the XDR, extract the destination, route it through the adapter.
-- [x] Local decision history: persist proceed/cancel decisions to `chrome.storage.local` (capped, on-device only) with a history page.
-- [x] Albedo interception: monkey-patch `window.open` to intercept the `auth.albedo.link` popup, proxy the first `tx`/`pay` postMessage through the scoring pipeline before it reaches Albedo.
-- [ ] Swap the stub score for a live one from the adapter.
-- [ ] Generalise interception beyond Freighter and Albedo (xBull, Lobstr).
+- [x] Freighter interception with a complete local transaction review.
+- [x] Albedo interception (`window.open` popup flow).
+- [x] Local decision history and protection-status reporting.
+- [x] Remove the placeholder hash score. Scoring is off by default and the UI shows Unknown, never an invented score.
+- [x] Score-source setting: Off / Testkit fixtures (testnet only) / Soroban (experimental).
+- [x] End-to-end test: built extension + local dApp + testkit testnet XDR.
+- [ ] A deployed Soroban risk-oracle contract to point the Soroban source at (tracked in `grydlock-oracle-adapter`).
+- [ ] Asset-level checks (scam trustlines).
+- [ ] xBull and Lobstr adapters.
+- [ ] Firefox support.
+- [ ] Localisation.
 
-> **Do not build real interception until the adapter returns a real score.** Interception without a working score source is a warning with nothing to warn about.
+Open, scoped work is tracked as [GitHub issues](https://github.com/Gryd-lock/grydlock-extension/issues).
+Issues labelled `good first issue` are self-contained.
 
 ## Dependency Maintenance
 

@@ -2,7 +2,8 @@ import type { Decision, Outcome } from './protocol'
 import type { DecodedBatch, DecodedDestination } from '../decode/decodeTransaction'
 import { extractTransactionReview, scoreableTargets } from '../decode/transactionReview'
 import { aggregateReview } from '../review/policy'
-import type { AggregatedReview, ReviewTarget, TargetEvidence } from '../review/model'
+import type { AggregatedReview, OracleSourceKind, ReviewTarget, TargetEvidence } from '../review/model'
+import type { ScoreLookup } from '../adapter/oracleAdapter'
 
 export interface ResolveOutcomeDeps {
   extractDestination: (xdr: string, networkPassphrase?: string) => DecodedBatch | null
@@ -20,8 +21,42 @@ export interface ResolveReviewOutcomeDeps {
    * The review boundary keeps score requests network-scoped and typed. The
    * adapter may project only approved account targets to its legacy API.
    */
-  getScore: (target: ReviewTarget) => Promise<number>
+  getScore?: (target: ReviewTarget) => Promise<number>
+  /**
+   * Typed lookup that distinguishes "no score for this target" from "oracle
+   * failed". Preferred over `getScore` when both are supplied. When neither
+   * is supplied, destination scoring is off and no score is invented.
+   */
+  lookupScore?: (target: ReviewTarget) => Promise<ScoreLookup>
+  oracleSource?: OracleSourceKind
+  /** Set when the configured source was refused for this request's network. */
+  oracleRefusal?: 'fixtures-require-testnet'
   requestDecision: (review: AggregatedReview) => Promise<Decision>
+}
+
+async function evidenceFor(
+  target: ReviewTarget,
+  deps: Pick<ResolveReviewOutcomeDeps, 'getScore' | 'lookupScore'>,
+): Promise<TargetEvidence> {
+  if (deps.lookupScore) {
+    try {
+      const lookup = await deps.lookupScore(target)
+      return lookup.status === 'available'
+        ? { target, score: lookup.score, status: 'available' }
+        : { target, status: lookup.status }
+    } catch {
+      return { target, status: 'unavailable' }
+    }
+  }
+  if (!deps.getScore) return { target, status: 'not-configured' }
+  try {
+    const score = await deps.getScore(target)
+    return Number.isFinite(score) && Number.isInteger(score) && score >= 0 && score <= 100
+      ? { target, score, status: 'available' }
+      : { target, status: 'unavailable' }
+  } catch {
+    return { target, status: 'unavailable' }
+  }
 }
 
 /**
@@ -38,26 +73,30 @@ export interface ResolveReviewOutcomeDeps {
  */
 export async function buildAggregatedReview(
   xdr: string,
-  deps: Pick<ResolveReviewOutcomeDeps, 'extractReview' | 'getScore'>,
+  deps: Pick<
+    ResolveReviewOutcomeDeps,
+    'extractReview' | 'getScore' | 'lookupScore' | 'oracleSource' | 'oracleRefusal'
+  >,
   networkPassphrase?: string,
 ): Promise<AggregatedReview | null> {
   const review = (deps.extractReview ?? extractTransactionReview)(xdr, networkPassphrase)
   if (!review) return null
 
-  const evidence: TargetEvidence[] = await Promise.all(
-    scoreableTargets(review).map(async (target) => {
-      try {
-        const score = await deps.getScore(target)
-        return Number.isFinite(score) && Number.isInteger(score) && score >= 0 && score <= 100
-          ? { target, score, status: 'available' as const }
-          : { target, status: 'unavailable' as const }
-      } catch {
-        return { target, status: 'unavailable' as const }
-      }
-    }),
+  const evidence = await Promise.all(
+    scoreableTargets(review).map((target) => evidenceFor(target, deps)),
   )
 
-  return aggregateReview(review, evidence)
+  const aggregated = aggregateReview(review, evidence)
+  if (deps.oracleRefusal === 'fixtures-require-testnet') {
+    aggregated.findings.push({
+      code: 'oracle-fixtures-refused',
+      severity: 'info',
+      title: 'Testkit fixtures not used on this network',
+      detail:
+        'Fixture scores are synthetic testnet data, so destination scoring is off for this non-testnet request.',
+    })
+  }
+  return deps.oracleSource ? { ...aggregated, oracleSource: deps.oracleSource } : aggregated
 }
 
 /** Production review path used where a single Promise spanning the whole review-plus-decision is acceptable (e.g. tests, the legacy non-durable caller). */
