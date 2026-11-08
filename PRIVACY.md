@@ -32,11 +32,11 @@ The following information is processed locally on your machine:
 
 You choose the score source on the extension's options page:
 
-| Source | Network requests |
-| --- | --- |
-| Off (default) | None |
+| Source                          | Network requests                                            |
+| ------------------------------- | ----------------------------------------------------------- |
+| Off (default)                   | None                                                        |
 | Testkit fixtures (testnet only) | None. Scores come from a bundled copy of `grydlock-testkit` |
-| Soroban oracle (experimental) | Read-only RPC calls to the URL you enter |
+| Soroban oracle (experimental)   | Read-only RPC calls to the URL you enter                    |
 
 With the Soroban source selected, each signing request triggers, per account destination,
 `getNetwork`, `getLatestLedger` and `simulateTransaction` calls to the RPC URL you configured. The

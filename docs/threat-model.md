@@ -50,7 +50,7 @@ Not every objective is fully enforced by the current code. The risk register bel
 - optional account-target risk evidence and aggregated tier;
 - per-request identifiers and user decisions.
 
-The current stub score is computed locally. A future network-backed oracle may learn the destination address and request timing unless a privacy-preserving design is introduced and documented.
+Destination scoring is off by default, and the Testkit-fixtures source is local. The opt-in, experimental Soroban source sends each scored destination address to the RPC operator the user configured, which reveals the address and request timing (see [PRIVACY.md](../PRIVACY.md)). A privacy-preserving lookup design has not been built.
 
 ### Assets Gryd Lock does not hold
 
@@ -68,7 +68,7 @@ The current stub score is computed locally. A future network-backed oracle may l
 - **Isolated-world bridge:** content script with `chrome.runtime` access that relays messages between the page and extension.
 - **MV3 background service worker:** builds bounded reviews, obtains account-target evidence, tracks pending decisions, and opens review windows.
 - **Warning popup:** retrieves worker-resident review data by request ID and sends the user's decision.
-- **Oracle adapter:** currently a deterministic local stub; a future implementation will be an external trust and availability dependency.
+- **Oracle adapter:** `grydlock-oracle-adapter`. Off by default. Testkit fixtures are local and testnet-only. The experimental Soroban source is an external trust and availability dependency on a user-chosen RPC node and contract.
 - **Browser and extension platform:** enforces isolation, permissions, extension URLs, runtime messaging, and service-worker lifecycle.
 
 ## Trust boundaries and data flow
@@ -97,7 +97,7 @@ React's default escaping reduces direct HTML injection risk. XDR, memos, amounts
 
 ### Boundary 5: background service worker → oracle adapter
 
-The current adapter is a local stub and is not evidence of destination safety. A future remote adapter introduces network confidentiality, authentication, integrity, availability, freshness, privacy, and false-positive/false-negative risks. A timeout and defined fallback are tracked in issue `#12`.
+No score source is evidence of destination safety: fixture scores are synthetic, and no oracle contract is deployed. A missing score is shown as **Unknown**, never as Low. The Soroban source introduces network confidentiality, integrity, availability, freshness, privacy and false-positive/false-negative risks. The adapter's `SorobanOracle` checks the network passphrase, contract ID, interface version and response schema. The extension adds a 5 s timeout, a circuit breaker and a cache, and any failure is reported as "assessment unavailable".
 
 ### Boundary 6: MAIN world → Freighter
 
@@ -159,7 +159,7 @@ Gryd Lock does not currently protect against:
 | Wrong Stellar network used for decoding                               | The incoming alias or custom passphrase is resolved once, retained in every typed target and the displayed review, and used in the network-bound digest | The extension relies on the wallet/dApp-supplied passphrase; it cannot independently prove the intended network. |
 | Attacker-controlled review data exhausts popup or leaks through a URL | Worker-only review storage, opaque background-generated-ID-only popup URL, control-character stripping, and display bounds                              | Request authenticity for the initial page request remains open (Boundary 2); stale/copied-popup risk is resolved by window binding (ADR-0004). |
 | Overbroad page access increases attack surface                        | MV3 isolation                                                                                                                                           | Scripts and host permission currently use `<all_urls>`; reduce or justify access (`#5`).                         |
-| Oracle stalls signing                                                 | Current local stub resolves quickly                                                                                                                     | Remote adapter needs cancellation, timeout, and explicit fallback (`#12`).                                       |
+| Oracle stalls signing                                                 | Per-lookup 5 s timeout and circuit breaker (`src/adapter/`); a failed lookup degrades to "assessment unavailable" | RPC latency on a real deployment is unmeasured.                                                                   |
 | Oracle gives a wrong or malicious score                               | Tier mapping displays supplied score                                                                                                                    | Authenticate source, define freshness/provenance, monitor quality, and never describe score as a guarantee.      |
 | Dependency or build compromise                                        | Lockfile, lint/type/test/build CI                                                                                                                        | Automate dependency updates and keep CI-gated review (`#46`); protect release credentials and provenance.        |
 | Popup or decision is not bound to the originating tab/frame/request   | Request bound to originating tab/frame/document (invalidated on navigation/close) and to the popup's own windowId; first valid terminal transition wins, replay is a no-op (ADR-0004) | Resolved for identity/binding/replay in scope; see ADR-0004 for what remains deferred. |
@@ -171,7 +171,7 @@ Issue references identify planned work; they are not evidence that the mitigatio
 
 ### Current build
 
-The intercepted unsigned XDR and all review facts remain inside the extension/browser process. The popup URL contains only an opaque request ID; it never contains XDR, sources, memo, amounts, targets, contract IDs, claimable-balance IDs, findings, or scores. The local score stub does not send an account target to a server.
+The intercepted unsigned XDR and all review facts remain inside the extension/browser process. The popup URL contains only an opaque request ID; it never contains XDR, sources, memo, amounts, targets, contract IDs, claimable-balance IDs, findings, or scores. With the default (off) or Testkit-fixtures source, no account target is sent to any server.
 
 However:
 
@@ -227,7 +227,7 @@ Tests should cover negative and adversarial paths, not only the happy path. Real
 
 Review this document when:
 
-- a live oracle replaces the stub;
+- a deployed oracle contract is used by the Soroban source;
 - a new wallet adapter is added;
 - Chrome permissions or execution contexts change;
 - signing state becomes persistent;
