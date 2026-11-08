@@ -17,7 +17,8 @@
     "test:visual": "playwright test tests/visual --project=chromium",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "visual:serve": "vite --host 127.0.0.1 --port 4173"
+    "visual:serve": "vite --host 127.0.0.1 --port 4173",
+    "demo": "node demo/server.mjs"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "16.0.1",

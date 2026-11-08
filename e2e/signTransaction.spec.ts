@@ -14,6 +14,7 @@ import {
   TransactionBuilder,
 } from '@stellar/stellar-sdk'
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test'
+import { clickAndClose } from './clickAndClose'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const extensionPath = path.resolve(__dirname, '../dist')
@@ -197,7 +198,7 @@ async function makeDecision(popupPromise: Promise<Page>, label: 'Proceed' | 'Can
       await criticalConfirmation.fill('CRITICAL')
     }
   }
-  await popup.getByRole('button', { name: label }).click()
+  await clickAndClose(popup, popup.getByRole('button', { name: label }))
 }
 
 test.describe('Freighter signTransaction interception', () => {
