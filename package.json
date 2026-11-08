@@ -48,7 +48,7 @@
     "globals": "^17.11.0",
     "grydlock-testkit": "https://codeload.github.com/Gryd-lock/grydlock-testkit/tar.gz/7064404d6e7c44df1f980d532d23901651d79426",
     "jest-axe": "^10.0.0",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "prettier": "^3.9.6",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.67.0",
