@@ -1,6 +1,8 @@
 import {
   CircuitBreakerOracle,
   OracleError,
+  SOROBAN_ORACLE_INTERFACE_VERSION_RANGE,
+  SorobanOracle,
   StubOracle,
   compose,
   withCache,
@@ -14,13 +16,17 @@ import {
   ORACLE_CACHE_TTL_MS,
   ORACLE_TIMEOUT_MS,
 } from './config'
+import { SorobanRpcLiveTransport } from './sorobanRpcTransport'
 
 /**
  * Which score source the extension consults for destination risk. `off` is
  * the default: the extension then shows its local transaction review only
  * and never fabricates a destination score.
  */
-export type OracleSourceConfig = { kind: 'off' } | { kind: 'testkit-fixtures' }
+export type OracleSourceConfig =
+  | { kind: 'off' }
+  | { kind: 'testkit-fixtures' }
+  | { kind: 'soroban'; contractId: string; rpcUrl: string; networkPassphrase: string }
 
 export const DEFAULT_ORACLE_SOURCE: OracleSourceConfig = { kind: 'off' }
 
@@ -71,14 +77,45 @@ function withResilience(base: RiskOracle): RiskOracle {
   )
 }
 
-/** Builds the oracle for a source, or `null` when scoring is switched off. */
-export function createRiskOracle(source: OracleSourceConfig): RiskOracle | null {
+function buildOracle(source: Exclude<OracleSourceConfig, { kind: 'off' }>): RiskOracle {
   switch (source.kind) {
-    case 'off':
-      return null
     case 'testkit-fixtures':
       return withResilience(new TestkitFixtureOracle())
+    case 'soroban':
+      return withResilience(
+        new SorobanOracle(
+          {
+            environment: 'production',
+            networkPassphrase: source.networkPassphrase,
+            rpcEndpoints: [source.rpcUrl],
+            contractId: source.contractId,
+            supportedInterfaceVersionRange: SOROBAN_ORACLE_INTERFACE_VERSION_RANGE,
+            // Simulation reads current ledger state, so there are no
+            // confirmations to wait for; results older than a minute are
+            // reported stale by SorobanOracle rather than live.
+            finalityPolicy: { minConfirmations: 0, maxResultAgeMs: 60_000 },
+            requestBudgetMs: ORACLE_TIMEOUT_MS,
+          },
+          new SorobanRpcLiveTransport({ rpcUrl: source.rpcUrl, contractId: source.contractId }),
+        ),
+      )
   }
+}
+
+// One instance per distinct configuration, so cache and breaker state
+// persist across requests and never leak between sources or networks.
+const oracles = new Map<string, RiskOracle>()
+
+/** Builds (or reuses) the oracle for a source, or `null` when scoring is switched off. */
+export function createRiskOracle(source: OracleSourceConfig): RiskOracle | null {
+  if (source.kind === 'off') return null
+  const key = JSON.stringify(source)
+  let oracle = oracles.get(key)
+  if (!oracle) {
+    oracle = buildOracle(source)
+    oracles.set(key, oracle)
+  }
+  return oracle
 }
 
 function isUnscoredError(error: unknown): boolean {

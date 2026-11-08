@@ -121,6 +121,33 @@ describe('background message listener', () => {
     return mockAddListener.mock.calls[0][0]
   }
 
+  it.each([
+    ['mainnet', 'Public Global Stellar Network ; September 2015', 'off', 'fixtures-require-testnet'],
+    ['testnet', 'Test SDF Network ; September 2015', 'testkit-fixtures', undefined],
+  ])(
+    'applies the testnet-only policy to fixture mode on %s',
+    async (_label, networkPassphrase, expectedSource, expectedRefusal) => {
+      mockLocalGet.mockImplementation(async (key: unknown) =>
+        key === 'oracleSettingsV1' ? { oracleSettingsV1: { source: 'testkit-fixtures' } } : {},
+      )
+      const resolveModule = await import('../intercept/resolveOutcome')
+      const buildReview = vi
+        .spyOn(resolveModule, 'buildAggregatedReview')
+        .mockResolvedValue(FAKE_REVIEW)
+      await import('./background')
+      const listener = mockAddListener.mock.calls[0][0]
+
+      listener({ ...SIGN_REQUEST_MESSAGE, networkPassphrase }, DAPP_SENDER, vi.fn())
+      for (let i = 0; i < 5; i++) await flushPromises()
+
+      expect(buildReview).toHaveBeenCalledTimes(1)
+      const deps = buildReview.mock.calls[0][1]
+      expect(deps.oracleSource).toBe(expectedSource)
+      expect(deps.oracleRefusal).toBe(expectedRefusal)
+      expect(deps.lookupScore === undefined).toBe(expectedSource === 'off')
+    },
+  )
+
   it('handles the full SIGN_REQUEST -> SIGN_ACK -> AWAIT_OUTCOME -> DECISION_MADE -> SIGN_OUTCOME round trip', async () => {
     const listener = await importBackgroundWithFakeReview()
 

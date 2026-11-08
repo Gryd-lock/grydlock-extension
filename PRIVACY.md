@@ -6,8 +6,9 @@ Gryd Lock is built on a foundation of user trust. This document outlines how dat
 
 **All transaction inspection, parsing, and analysis are performed entirely locally on your device.**
 
-The current adapter is local-only. Before a live oracle is enabled, its transport and privacy
-contract must be separately reviewed and documented. No diagnostics or health data leaves your
+Destination scoring is **off by default**, and in that mode nothing leaves your device. The
+"Testkit fixtures" source is also fully local. Only the opt-in, experimental "Soroban oracle"
+source makes network requests (see section 2). No diagnostics or health data ever leaves your
 device.
 
 ---
@@ -27,15 +28,28 @@ The following information is processed locally on your machine:
 
 ---
 
-## 2. Data Transmitted (External Oracle Scoring)
+## 2. Data Transmitted (only with the Soroban oracle source)
 
-To determine whether the destination account is fraudulent or associated with known scams, a single network request is made to the Gryd Lock Oracle.
+You choose the score source on the extension's options page:
 
-- **What is sent**: **Only** the destination public key (e.g., `GBX...`).
-- **What is NOT sent**: No transaction amount, source account, signatures, operation types, sequence numbers, memo fields, or user credentials are ever transmitted.
-- **Purpose**: To retrieve a numerical risk score (0-100) indicating the safety level of the destination.
+| Source | Network requests |
+| --- | --- |
+| Off (default) | None |
+| Testkit fixtures (testnet only) | None. Scores come from a bundled copy of `grydlock-testkit` |
+| Soroban oracle (experimental) | Read-only RPC calls to the URL you enter |
 
-_Note: The network request is routed exclusively through the designated adapter boundary (`src/adapter/oracleAdapter.ts`)._
+With the Soroban source selected, each signing request triggers, per account destination,
+`getNetwork`, `getLatestLedger` and `simulateTransaction` calls to the RPC URL you configured. The
+simulated transaction invokes `get_score(destination)` on the contract ID you configured, from an
+all-zero placeholder source account. It is never signed or submitted.
+
+- **What is sent**: the destination account ID, the configured contract ID, and the standard
+  request metadata (IP address, user agent) that any HTTPS request reveals to the RPC operator.
+- **What is NOT sent**: no amount, source account, signatures, memo, other operations, the
+  transaction you are signing, or any user identifier.
+- **Who receives it**: only the RPC operator at the URL you entered. Gryd Lock runs no server.
+
+_All network access is confined to `src/adapter/` (see section 4)._
 
 ---
 

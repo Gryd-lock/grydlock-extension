@@ -51,3 +51,31 @@ body {
   font-family: monospace;
   font-size: 12px;
 }
+
+.oracle-settings {
+  margin: 0 0 24px;
+}
+
+.oracle-settings fieldset {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+}
+
+.oracle-settings fieldset > label,
+.oracle-settings .soroban-fields label {
+  display: block;
+  margin: 6px 0;
+}
+
+.oracle-settings .soroban-fields input {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  font-family: ui-monospace, monospace;
+}
+
+.oracle-settings .error {
+  color: #c62828;
+}

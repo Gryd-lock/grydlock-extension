@@ -1,9 +1,9 @@
+import { createRiskOracle, lookupScore, type OracleSourceConfig } from '../adapter/oracleAdapter'
 import {
-  DEFAULT_ORACLE_SOURCE,
-  createRiskOracle,
-  lookupScore,
-  type OracleSourceConfig,
-} from '../adapter/oracleAdapter'
+  effectiveOracleSettings,
+  loadOracleSettings,
+  type OracleSourceRefusal,
+} from '../settings/oracleSettings'
 import {
   clearDiagnostics,
   exportDiagnostics,
@@ -447,9 +447,29 @@ function clearBadgeIfIdle() {
   }
 }
 
-/** The oracle source in effect. Settings wiring replaces this in a later step. */
-async function currentOracleSource(): Promise<OracleSourceConfig> {
-  return DEFAULT_ORACLE_SOURCE
+/** The oracle source in effect for one request, after network policy. */
+async function oracleSourceFor(
+  networkPassphrase: string | undefined,
+): Promise<{ source: OracleSourceConfig; refusal?: OracleSourceRefusal }> {
+  const { settings, refusal } = effectiveOracleSettings(await loadOracleSettings(), networkPassphrase)
+  switch (settings.source) {
+    case 'off':
+      return { source: { kind: 'off' }, refusal }
+    case 'testkit-fixtures':
+      return { source: { kind: 'testkit-fixtures' } }
+    case 'soroban':
+      // The review engine refuses requests without a passphrase before scoring.
+      return networkPassphrase
+        ? {
+            source: {
+              kind: 'soroban',
+              contractId: settings.contractId,
+              rpcUrl: settings.rpcUrl,
+              networkPassphrase,
+            },
+          }
+        : { source: { kind: 'off' } }
+  }
 }
 
 /**
@@ -545,12 +565,13 @@ function handleSignRequest(
       respondOnce({ type: 'SIGN_ACK', requestId, deadlineAt: record.deadlineAt })
 
       transitionPendingRequest(requestId, 'validating')
-      const oracleSource = await currentOracleSource()
+      const { source: oracleSource, refusal } = await oracleSourceFor(message.networkPassphrase)
       const oracle = createRiskOracle(oracleSource)
       const review = await buildAggregatedReview(
         message.xdr,
         {
           oracleSource: oracleSource.kind,
+          oracleRefusal: refusal,
           // Only network-scoped account targets reach here (the review engine
           // enforces that); the oracle receives the bare account string.
           lookupScore: oracle ? (target) => lookupScore(oracle, target.value) : undefined,

@@ -29,6 +29,8 @@ export interface ResolveReviewOutcomeDeps {
    */
   lookupScore?: (target: ReviewTarget) => Promise<ScoreLookup>
   oracleSource?: OracleSourceKind
+  /** Set when the configured source was refused for this request's network. */
+  oracleRefusal?: 'fixtures-require-testnet'
   requestDecision: (review: AggregatedReview) => Promise<Decision>
 }
 
@@ -71,7 +73,10 @@ async function evidenceFor(
  */
 export async function buildAggregatedReview(
   xdr: string,
-  deps: Pick<ResolveReviewOutcomeDeps, 'extractReview' | 'getScore' | 'lookupScore' | 'oracleSource'>,
+  deps: Pick<
+    ResolveReviewOutcomeDeps,
+    'extractReview' | 'getScore' | 'lookupScore' | 'oracleSource' | 'oracleRefusal'
+  >,
   networkPassphrase?: string,
 ): Promise<AggregatedReview | null> {
   const review = (deps.extractReview ?? extractTransactionReview)(xdr, networkPassphrase)
@@ -82,6 +87,15 @@ export async function buildAggregatedReview(
   )
 
   const aggregated = aggregateReview(review, evidence)
+  if (deps.oracleRefusal === 'fixtures-require-testnet') {
+    aggregated.findings.push({
+      code: 'oracle-fixtures-refused',
+      severity: 'info',
+      title: 'Testkit fixtures not used on this network',
+      detail:
+        'Fixture scores are synthetic testnet data, so destination scoring is off for this non-testnet request.',
+    })
+  }
   return deps.oracleSource ? { ...aggregated, oracleSource: deps.oracleSource } : aggregated
 }
 

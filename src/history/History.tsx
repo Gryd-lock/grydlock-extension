@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { HISTORY_LIMIT, clearHistory, readHistory, type HistoryEntry } from '../lib/history'
 import { tierForScore } from '../lib/tiers'
+import OracleSettingsPanel from '../settings/OracleSettingsPanel'
 import './History.css'
 
 type LoadState =
@@ -63,6 +64,7 @@ export default function History() {
       <p className="privacy-note">
         Stored only on this device (last {HISTORY_LIMIT} decisions). Nothing is ever transmitted.
       </p>
+      <OracleSettingsPanel />
       <section aria-labelledby="diagnostics-heading">
         <h2 id="diagnostics-heading">Local diagnostics</h2>
         <p className="privacy-note">
