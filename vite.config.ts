@@ -41,6 +41,7 @@ export default defineConfig({
         'src/intercept/bridgeEntry.ts',
         'src/background/background.ts',
         'src/tests/e2e/**',
+        'tests/e2e/**',
       ],
       thresholds: {
         statements: 90,

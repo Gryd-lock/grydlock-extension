@@ -1,0 +1,7 @@
+{
+  "source": "FREIGHTER_EXTERNAL_MSG_REQUEST",
+  "type": "SUBMIT_TRANSACTION",
+  "transactionXdr": "AAAAAgAAAABlX...",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "accountToSign": "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFTGOBTXOTMABNUOWRGQC"
+}

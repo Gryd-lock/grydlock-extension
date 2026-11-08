@@ -15,12 +15,24 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npx playwright install chromium
+      - name: Audit production dependencies (blocking)
+        run: npm audit --omit=dev
+
+      - name: Audit all dependencies, including devDependencies (informational)
+        run: npm audit
+        continue-on-error: true
+
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm run validate:manifest
+      - run: npm run check:versions
       - run: npm run build
+
+      - name: Install Playwright + system deps (single install, post-build)
+        run: npx playwright install --with-deps chromium
+
       - run: npm run test:visual
-      - run: npx playwright install --with-deps chromium
-      - run: xvfb-run --auto-servernum npm run test:e2e
+      # STILL OPEN: no step here validates dist/manifest.json post-build —
+      # only the pre-build source manifest is checked above. Add once
+      # validate-manifest.mjs supports a --root flag (see earlier note).

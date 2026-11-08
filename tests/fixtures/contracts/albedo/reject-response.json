@@ -1,0 +1,9 @@
+{
+  "albedoIntentResult": {
+    "intent": "tx",
+    "status": "rejected",
+    "code": -4,
+    "message": "Transaction rejected by user",
+    "__reqid": "req_albedo_123456789"
+  }
+}

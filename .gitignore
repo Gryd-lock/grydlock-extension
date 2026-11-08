@@ -3,4 +3,17 @@ dist/
 coverage/
 *.tsbuildinfo
 test-results/
+playwright-report/
+coverage/
 tests/visual/popup.spec.ts-snapshots/*-chromium-darwin.png
+
+fixtures/wallets/**
+!fixtures/wallets/**/
+!fixtures/wallets/**/.pinned-version
+
+.env
+.env.*
+!.env.example
+
+.idea/
+.DS_Store
